@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "dgSpecHash": "fb0XznQwIR4=",
+  "success": true,
+  "projectFilePath": "C:\\Users\\draco\\Documents\\Projects\\FantasyMapGenerator\\src\\OLearyMapGen.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\draco\\.nuget\\packages\\sharpvoronoilib\\1.0.5\\sharpvoronoilib.1.0.5.nupkg.sha512"
+  ],
+  "logs": []
+}
