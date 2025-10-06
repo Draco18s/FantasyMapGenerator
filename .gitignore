@@ -1,1 +1,7 @@
-src/resources.h
+
+
+# Visual Studio cache directory
+[Bb]in/
+.vs/
+.vsconfig
+*.editorconfig

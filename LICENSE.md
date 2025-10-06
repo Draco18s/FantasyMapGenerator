@@ -1,3 +1,9 @@
+Copyright (c) 2025 Draco18s
+
+The C# Translation. Below is the original license and its third-party sources
+which may or may not still be in use in the C# translation, but which still
+apply to the original c++ code still present in the project files.
+
 Copyright (c) 2016 Ryan L. Guy
 
 This software is provided 'as-is', without any express or implied
