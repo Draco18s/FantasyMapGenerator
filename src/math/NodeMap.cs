@@ -12,6 +12,7 @@ namespace OLearyMapGen.math
 	{
 		private readonly List<T> _nodes;
 		private readonly Dictionary<VoronoiPoint, int> _vertexMap;
+		private readonly Dictionary<int, int[]> _neighborMap;
 		private readonly VertexMap map;
 		private static readonly T VALUE_TWO = default;
 		private static readonly T VALUE_ZERO = default;
@@ -22,12 +23,24 @@ namespace OLearyMapGen.math
 			VALUE_TWO++;
 		}
 
-		public NodeMap(VertexMap plane, T fillVal)
+		public NodeMap(VertexMap plane, T fillVal, Dictionary<int, int[]> neighbors=null)
 		{
 			List<VoronoiPoint> verts = plane.Vertices;
 			_nodes = new List<T>(verts.Select(_ => fillVal));
 			_vertexMap = verts.ToDictionary(v => v, v => verts.IndexOf(v));
 			map = plane;
+
+			_neighborMap = neighbors ?? verts.ToDictionary(GetNodeIndex, v => plane.GetNeighbourIndices(v).Select(GetNodeIndex).ToArray());
+		}
+
+		public Dictionary<int, int[]> GetNeighborMap()
+		{
+			return _neighborMap;
+		}
+
+		public VertexMap GetVertexMap()
+		{
+			return map;
 		}
 
 		public void Fill(T val)
@@ -141,6 +154,11 @@ namespace OLearyMapGen.math
 			}
 
 			Adjust(VALUE_ZERO - median);
+		}
+
+		public int[] GetNeighbors(int i)
+		{
+			return _neighborMap[i];
 		}
 	}
 }

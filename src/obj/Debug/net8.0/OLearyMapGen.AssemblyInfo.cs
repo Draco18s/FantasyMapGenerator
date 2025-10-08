@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("OLearyMapGen")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+d9792317488662cc8959bd96bace5e9e59d9aad7")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+4599ab4d8cf77e4438f3429289d5e1624dbad10f")]
 [assembly: System.Reflection.AssemblyProductAttribute("OLearyMapGen")]
 [assembly: System.Reflection.AssemblyTitleAttribute("OLearyMapGen")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

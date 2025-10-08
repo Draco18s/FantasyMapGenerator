@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Numerics;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading.Tasks;
@@ -24,49 +25,18 @@ namespace OLearyMapGen.math
 			Edge
 		}
 
-		/// <summary>
-		/// Placeholder for the 2D Extents structure.
-		/// </summary>
-		public struct Extents2d
-		{
-			public readonly double minX;
-			public readonly double minY;
-			public readonly double maxX;
-			public readonly double maxY;
-
-			public Extents2d(double x1, double y1, double x2, double y2)
-			{
-				minX = x1;
-				minY = y1;
-				maxX = x2;
-				maxY = y2;
-			}
-
-			public bool ContainsPoint(VoronoiPoint v)
-			{
-				return v.X >= minX && v.X <= maxX && v.Y >= minY && v.Y <= maxY;
-			}
-
-			public bool ContainsPoint(VoronoiSite v)
-			{
-				return v.X >= minX && v.X <= maxX && v.Y >= minY && v.Y <= maxY;
-			}
-		}
-
 		private readonly VoronoiPlane cellMap;
-		private readonly Extents2d _extents;
 
 		public List<VoronoiPoint> Vertices { get; }
+		public List<VoronoiSite> Sites => cellMap.Sites;
+
 		public List<VoronoiPoint> Interior { get; }
 		public List<VoronoiPoint> Edge { get; }
-
-		// Private lists/arrays
-		private readonly List<VertexType> _vertexTypes;
+		public List<VertexType> _vertexTypes { get; }
 
 		public VertexMap(VoronoiPlane plane, Extents2d extents)
 		{
 			cellMap = plane ?? throw new ArgumentNullException(nameof(plane));
-			_extents = extents;
 
 			Vertices = cellMap.GetAllVerticies();
 
@@ -81,7 +51,7 @@ namespace OLearyMapGen.math
 			{
 				VoronoiPoint v = Vertices[i];
 
-				if (!_extents.ContainsPoint(v) || IsBoundaryVertex(v))
+				if (!extents.ContainsPoint(v) || IsBoundaryVertex(v))
 				{
 					continue;
 				}

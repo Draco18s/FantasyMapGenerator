@@ -1,10 +1,12 @@
 {
   "version": 2,
-  "dgSpecHash": "fb0XznQwIR4=",
+  "dgSpecHash": "bj8yJzBLIYY=",
   "success": true,
   "projectFilePath": "C:\\Users\\draco\\Documents\\Projects\\FantasyMapGenerator\\src\\OLearyMapGen.csproj",
   "expectedPackageFiles": [
-    "C:\\Users\\draco\\.nuget\\packages\\sharpvoronoilib\\1.0.5\\sharpvoronoilib.1.0.5.nupkg.sha512"
+    "C:\\Users\\draco\\.nuget\\packages\\microsoft.win32.systemevents\\9.0.9\\microsoft.win32.systemevents.9.0.9.nupkg.sha512",
+    "C:\\Users\\draco\\.nuget\\packages\\sharpvoronoilib\\1.0.5\\sharpvoronoilib.1.0.5.nupkg.sha512",
+    "C:\\Users\\draco\\.nuget\\packages\\system.drawing.common\\9.0.9\\system.drawing.common.9.0.9.nupkg.sha512"
   ],
   "logs": []
 }
