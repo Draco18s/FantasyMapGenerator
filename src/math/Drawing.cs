@@ -100,12 +100,14 @@ namespace OLearyMapGen.math
 				int old_cross = cross_product;
 				if (old_cross >= 0)
 				{
-					x += dx_x;
+					if(x != end_x)
+						x += dx_x;
 					cross_product += dx_cross;
 				}
 				if (old_cross <= 0)
 				{
-					y += dy_y;
+					if(y != end_y)
+						y += dy_y;
 					cross_product += dy_cross;
 				}
 			}

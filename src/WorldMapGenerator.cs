@@ -3,6 +3,7 @@ using SharpVoronoiLib;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Drawing;
 using System.Linq;
 using System.Numerics;
 using System.Text;
@@ -42,6 +43,7 @@ namespace OLearyMapGen
 		private NodeMap<double> _heightMap;
 		private NodeMap<double> _tempMap;
 		private NodeMap<double> _waterMap;
+		private NodeMap<double> _cityScoreMap;
 		private NodeMap<int> _biomeMap;
 		private FastNoiseLite _noise;
 		private GenParams _config;
@@ -49,14 +51,18 @@ namespace OLearyMapGen
 		public WorldMapGenerator(GenParams config)
 		{
 			_config = config;
-			VoronoiPlane plane = new VoronoiPlane(-_config.resolution/2, -_config.resolution/2, _config.chunkExtents.Width + _config.resolution/2, _config.chunkExtents.Height + _config.resolution/2);
+			VoronoiPlane plane = new VoronoiPlane(-_config.resolution * 4, -_config.resolution * 4, _config.chunkExtents.Width + _config.resolution * 4, _config.chunkExtents.Height * 4 * config.resolution);
 
 			UniformPoissonDiskSampler.SetSeed((uint)_config.seed);
-			IEnumerable<VoronoiSite> pts = UniformPoissonDiskSampler.SampleRectangle(new Vector2(0, 0), new Vector2((float)_config.chunkExtents.Width, (float)_config.chunkExtents.Height), (float)_config.resolution, 512)
-				.Select(p => new VoronoiSite(p.X, p.Y));
+			IEnumerable<VoronoiSite> pts = UniformPoissonDiskSampler.SampleRectangle(new Vector2((float)_config.resolution * 3, (float)_config.resolution * 3), new Vector2((float)(_config.chunkExtents.Width - _config.resolution * 3), (float)(_config.chunkExtents.Height - _config.resolution * 3)), (float)_config.resolution, 512)
+				.Select(p => new VoronoiSite(p.X, p.Y))
+				.Concat(PointsAroundEdge(_config.chunkExtents, _config.resolution, _config.resolution * 3));
 			plane.SetSites(pts.ToList());
 			plane.Tessellate();
-			plane.Relax(5);
+			plane.Relax(2);
+
+			var nPts = plane.Sites.Select(p => new Vector2((float)p.X, (float)p.Y)).Where(v => v.X < 0 || v.Y < 0 || v.X > 255 || v.Y > 255);
+
 			Console.WriteLine($"Tessellation complete {Program.timer.Elapsed}");
 			VertexMap _vm = new VertexMap(plane, _config.chunkExtents);
 			_heightMap = new NodeMap<double>(_vm, 0.0);
@@ -64,8 +70,33 @@ namespace OLearyMapGen
 			_tempMap = new NodeMap<double>(_vm, 0.0, neighborMap);
 			_waterMap = new NodeMap<double>(_vm, 0.0, neighborMap);
 			_biomeMap = new NodeMap<int>(_vm, 0, neighborMap);
+			_cityScoreMap = new NodeMap<double>(_vm, 0.0, neighborMap);
 			_noise = new FastNoiseLite(_config.seed);
 			_noise.SetNoiseType(FastNoiseLite.NoiseType.Perlin);
+		}
+
+		private IEnumerable<VoronoiSite> PointsAroundEdge(Extents2d chunkExtents, double resolution, double buffSize)
+		{
+			buffSize /= 2;
+			double x = chunkExtents.minX - buffSize;
+			double y = chunkExtents.minY - buffSize;
+			for (; x < chunkExtents.maxX + buffSize || x < chunkExtents.maxY + buffSize; )
+			{
+				if (x < chunkExtents.maxX + buffSize)
+				{
+					yield return new VoronoiSite(x, chunkExtents.minY - buffSize);
+					yield return new VoronoiSite(x, chunkExtents.maxY + buffSize);
+				}
+
+				if (y < chunkExtents.maxY + buffSize)
+				{
+					yield return new VoronoiSite(chunkExtents.minX - buffSize, y);
+					yield return new VoronoiSite(chunkExtents.maxX + buffSize, y);
+				}
+
+				x += resolution;
+				y += resolution;
+			}
 		}
 
 		public MapChunk GenerateChunk(int x, int y)
@@ -80,18 +111,82 @@ namespace OLearyMapGen
 			Console.WriteLine($"Erosion Pass Complete {Program.timer.Elapsed}");
 			_heightMap = CleanupPass(_heightMap, _config.sea_level, 3);
 			ersionDelta = CleanupPass(ersionDelta, 0, 3);
-			BiomeAssignmentPass(ersionDelta, riverVertices);
+			BiomeAssignmentPass(ersionDelta);
 			Console.WriteLine($"Biome Assignment Pass Complete {Program.timer.Elapsed}");
+
+			Dictionary<Point, double> cities = new Dictionary<Point, double>
+			{
+				{ new Point(108,25), 1 }
+			};
 
 			return new MapChunk()
 			{
+				position = new Point(x, y),
 				heightMap = _heightMap,
-				erosionFillMap = ersionDelta,
 				tempMap = _tempMap,
 				waterMap = _waterMap,
 				biomeMap = _biomeMap,
-				riverVertices = riverVertices
+				erosionFillMap = ersionDelta,
+				riverVertices = riverVertices,
+				cityPlacementScores = ComputeCityScores(cities, 30)
 			};
+		}
+
+		/// <summary>
+		/// Returns existing computed city score map (computing it if not initialized).
+		/// </summary>
+		/// <param name="_fluxScoreBonus"></param>
+		/// <returns></returns>
+		public NodeMap<double> GetPotentialCityLocations(double _fluxScoreBonus = 2.0)
+		{
+			if (_cityScoreMap.Max() == 0)
+				ComputeCityScores(null, _fluxScoreBonus);
+			return _cityScoreMap;
+		}
+
+		/// <summary>
+		/// Compute city location score map. Results will be cached and can be fetched with <href a="GetPotentialCityLocations">GetPotentialCityLocations</href>
+		/// </summary>
+		/// <param name="citiesAndTowns">Dictionary of existing locations to their distance score multiplier.</param>
+		/// <param name="minCityDistance">Expected city separation distance</param>
+		/// <param name="fluxScoreBonus">Desirability factor to place near rivers</param>
+		/// <returns></returns>
+		public NodeMap<double> ComputeCityScores(Dictionary<Point,double> citiesAndTowns = null, double minCityDistance = 4.0, double fluxScoreBonus=2.0)
+		{
+			_cityScoreMap.Fill(0);
+			NodeMap<int> flowMap = CalculateFlowMap(_heightMap);
+			NodeMap<double> fluxMap = CalculateFluxMap(_heightMap, flowMap);
+			fluxMap.Relax();
+
+			const double neginf = double.NegativeInfinity;
+			double _maxPenaltyDistance = minCityDistance * 2;
+			for (int i = 0; i < _cityScoreMap.Size(); i++)
+			{
+				double score = 0.0;
+				if (!IsLandVertex(_heightMap, i) || IsCoastVertex(_heightMap, i) || _biomeMap.Get(i) >= (int)BiomeDef.Lake)
+				{
+					score += neginf;
+				}
+				score += fluxScoreBonus * Math.Sqrt(fluxMap.Get(i));
+				score -= 0.2 * Math.Sqrt(_heightMap.Get(i));
+
+				if (citiesAndTowns != null)
+				{
+					VoronoiPoint v = _cityScoreMap.GetVertex(i);
+					Vector2 p = new Vector2((float)v.X, (float)v.Y);
+					foreach (KeyValuePair<Point, double> t in citiesAndTowns)
+					{
+						Vector2 l = new Vector2(t.Key.X, t.Key.Y);
+						double dist = Math.Min(Vector2.Distance(p, l), _maxPenaltyDistance);
+						double distfactor = 1 - dist / _maxPenaltyDistance;
+						score -= t.Value * distfactor * distfactor;
+					}
+				}
+
+				_cityScoreMap.Set(i, score);
+			}
+
+			return _cityScoreMap;
 		}
 
 		private NodeMap<double> CleanupPass(NodeMap<double> heightMap, double level, int iterations = 1)
@@ -170,12 +265,11 @@ namespace OLearyMapGen
 							best = nh;
 					}
 
-					if (count < nbs.Length)
+					if (count > 1)
 					{
 						unchanged++;
 						continue;
 					}
-
 					newh.Set(i, (orig - level) / 2 + level);
 					changed += 1;
 				}
@@ -195,11 +289,13 @@ namespace OLearyMapGen
 
 			for (int i = 0; i < _heightMap.Size(); i++)
 			{
-				ersionDelta.Set(i, filledMap.Get(i) - _heightMap.Get(i));
+				double h = Math.Max(_heightMap.Get(i), _config.sea_level);
+				double f = Math.Max(filledMap.Get(i), _config.sea_level);
 
 				double currlevel = _heightMap.Get(i);
 				double newlevel = currlevel - amount * results.erosionMap.Get(i);
 				_heightMap.Set(i, newlevel);
+				ersionDelta.Set(i, f - h);
 			}
 
 			return (ersionDelta, results.riverVertices);
@@ -498,7 +594,7 @@ namespace OLearyMapGen
 			return finalMap;
 		}
 
-		private void BiomeAssignmentPass(NodeMap<double> ersionDelta, List<int> riversVerts)
+		private void BiomeAssignmentPass(NodeMap<double> ersionDelta)
 		{
 			BiomeDef[,] biome_table = new BiomeDef[,]
 			{                                                                                         //       +---> increasing temperature
@@ -518,7 +614,7 @@ namespace OLearyMapGen
 				double temp = _tempMap.Get(i);
 				double wet = _waterMap.Get(i);
 				double alt = _heightMap.Get(i);
-				double lakefill = ersionDelta.Get(i);
+				double lakefill = ersionDelta.Get(i) * wet * (1-temp);
 
 				_biomeMap.Set(i, (int)biome_table[Digitize(wet, bins), Digitize(temp, bins)]);
 
@@ -528,9 +624,7 @@ namespace OLearyMapGen
 					_biomeMap.Set(i, (int)BiomeDef.SnowIce);
 				if (alt < _config.sea_level)
 					_biomeMap.Set(i, (int)BiomeDef.Ocean);
-				//if (riversVerts.Contains(i))
-				//	_biomeMap.Set(i, (int)BiomeDef.River);
-				if (alt > _config.sea_level + 0.01 && lakefill > _config.lakeFillThreshold && (2 * wet + temp / 2 > 0.7))
+				if (alt > _config.sea_level + _config.lakeFillThreshold && lakefill > _config.lakeFillThreshold && (2 * wet + temp / 2 > 0.7))
 					_biomeMap.Set(i, _biomeMap.Get(i) + (int)BiomeDef.Lake);
 			}
 		}
@@ -609,17 +703,10 @@ namespace OLearyMapGen
 				_heightMap.Set(i, ElevationAt(xx,yy));
 			}
 			Console.WriteLine($"Heightmap ranges from {_heightMap.Min()} to {_heightMap.Max()}");
-			//_heightMap.Adjust(-_heightMap.Min());
-			//_heightMap.SetLevelToMedian();
-			//_heightMap.Adjust(_config.sea_level);
 		}
 
 		private double ElevationAt(double x, double y)
 		{
-			if (Math.Abs(x - 9) < 6 && Math.Abs(y - 65) < 6)
-			{
-				;
-			}
 			double warp_scale_large = 2048.0 * _config.global_modifier;
 			double warp_strength_large = warp_scale_large * 0.1;
 
@@ -659,7 +746,7 @@ namespace OLearyMapGen
 			double mountain_contribution = mountain_noise * mountain_mask;// * 0.5;
 			elevation += mountain_contribution;
 
-			elevation = (Math.Tan((elevation * 2.4) - 1.2 + 0.35) + 0.35) / 3.75;
+			elevation = Math.Tan(elevation * 1.15 - 1.2) / 1.20 + 0.9;
 
 			return Math.Clamp(elevation,0,1);
 		}

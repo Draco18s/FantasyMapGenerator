@@ -160,5 +160,29 @@ namespace OLearyMapGen.math
 		{
 			return _neighborMap[i];
 		}
+
+		public void Relax()
+		{
+			List<T> averages = new List<T>(Size());
+			Dictionary<int, int[]> neighbors = this.GetNeighborMap();
+			for (int i = 0; i < Size(); i++)
+			{
+				int[] nbs = neighbors[i];
+				T numNeighbors = VALUE_ZERO;
+
+				T sum = VALUE_ZERO;
+				for (int nidx = 0; nidx < nbs.Length; nidx++)
+				{
+					sum = sum + Get(nbs[nidx]);
+					numNeighbors++;
+				}
+				averages.Add(sum / numNeighbors);
+			}
+
+			for (int i = 0; i < Size(); i++)
+			{
+				Set(i, averages[i]);
+			}
+		}
 	}
 }

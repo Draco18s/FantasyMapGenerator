@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Drawing;
 using System.IO;
+using System.Linq;
 using System.Numerics;
 using System.Threading;
 using static System.Runtime.InteropServices.JavaScript.JSType;
@@ -13,7 +14,7 @@ namespace OLearyMapGen
 	public static class HeightMapGenerator
 	{
 
-		public static Bitmap HeightMapRenderer(MapChunk chunk, Extents2d extents, Func<int, double, Color> getColor, Func<int, double, bool> isBodyOfWater)
+		public static Bitmap HeightMapRenderer(MapChunk chunk, Extents2d extents, Func<int, double, Color> getColor, Func<int, double, bool> isBodyOfWater, bool doHillShading = true)
 		{
 			List<VoronoiPoint> verts = chunk.heightMap.GetVertexMap().Vertices;
 			
@@ -21,22 +22,25 @@ namespace OLearyMapGen
 			plane.SetSites(verts.Select(p => new VoronoiSite(p.X, p.Y)).ToList());
 			plane.Tessellate();
 
-			float[,] heightData = GenerateHeightMap(chunk.heightMap, (int)Math.Round(extents.Width), (int)Math.Round(extents.Height), true, true);
+			float[,] heightData = GenerateHeightMap(chunk.heightMap, (int)Math.Round(extents.Width) + 4, (int)Math.Round(extents.Height) + 4, true, true, 2);
 			float[,] erosionData = GenerateHeightMap(chunk.erosionFillMap, (int)Math.Round(extents.Width), (int)Math.Round(extents.Height), true, false);
 			float[,] biomeData = GenerateHeightMap(chunk.biomeMap, (int)Math.Round(extents.Width), (int)Math.Round(extents.Height), false, false);
-			float[,] shading = ComputeHillshade(heightData);
+			float[,] cityData = GenerateHeightMap(chunk.cityPlacementScores, (int)Math.Round(extents.Width), (int)Math.Round(extents.Height), false, false);
+			float[,] waterData = GenerateHeightMap(chunk.waterMap, (int)Math.Round(extents.Width), (int)Math.Round(extents.Height), true, false);
 
-
-			Dictionary<int, int[]> neighbors = chunk.heightMap.GetNeighborMap();
-
+			var vv = verts.Where(v => v.X > 255 || v.Y > 255).Select(v => new Vector2((float)v.X, (float)v.Y));
+			var rv = chunk.riverVertices.Select(v => v < 0 ? new Vector2(-1, -1) : new Vector2((float)verts[v].X, (float)verts[v].Y)).Where(v => v.X > 255 || v.Y > 255);
 
 			IEnumerable<Vector2> rivs = chunk.riverVertices.Select(v => v < 0 ? new Vector2(-1,-1) : new Vector2((float)verts[v].X, (float)verts[v].Y));
 
-			return RenderImage(heightData, erosionData, biomeData, shading, rivs, getColor, isBodyOfWater);
+			return RenderImage(heightData, erosionData, waterData, biomeData, new Point(chunk.position.X * (int)extents.Width, chunk.position.Y * (int)extents.Height), rivs, getColor, isBodyOfWater);
 		}
 
-		private static Bitmap RenderImage(float[,] heightData, float[,] erosionData, float[,] biomeData, float[,] shading, IEnumerable<Vector2> rivers, Func<int, double, Color> getColor, Func<int, double, bool> isBodyOfWater)
+		private static Bitmap RenderImage(float[,] heightData, float[,] erosionData, float[,] waterData, float[,] biomeData, Point chunkOffset,
+			IEnumerable<Vector2> rivers, Func<int, double, Color> getColor, Func<int, double, bool> isBodyOfWater, bool drawRivers = true, bool doHillShading = true, bool useRawHeight=false)
 		{
+			float[,] shading = doHillShading ? ComputeHillshade(heightData) : new float[0,0];
+			int shadeBuffer = (heightData.GetLength(0) - erosionData.GetLength(0)) / 2;
 			int width = biomeData.GetLength(0);
 			int height = biomeData.GetLength(1);
 			Bitmap result = new Bitmap(width, height);
@@ -46,17 +50,12 @@ namespace OLearyMapGen
 				for (int y = 0; y < height; y++)
 				{
 					int biome = (int)Math.Round(biomeData[x, y]);
-					float shade = Math.Clamp(shading[x, y] + 0.5f, 0 , 1);
+					float shade = 1;
 
-					if (x > 0 && y > 0)
-					{
-						shade += Math.Clamp(shading[x-1, y] + 0.5f, 0, 1);
-						shade += Math.Clamp(shading[x-1, y-1] + 0.5f, 0, 1);
-						shade += Math.Clamp(shading[x, y-1] + 0.5f, 0, 1);
-						shade /= 4;
-					}
+					//Math.Clamp(shading[x, y] + 0.5f, 0 , 1);
 
-					double d = erosionData[x, y];
+					double w = waterData[x, y];
+					double d = erosionData[x, y] * w * 0.85;
 					Color c = getColor(biome, d);
 
 					if (isBodyOfWater(biome, d))
@@ -64,18 +63,34 @@ namespace OLearyMapGen
 						shade = 1;
 						skipPixels.Add(new Point(x, y));
 					}
+					else if(doHillShading)
+					{
+						if (x > 0 && y > 0)
+						{
+							shade += Math.Clamp(shading[x - 1 + shadeBuffer, y + shadeBuffer] + 0.5f, 0, 1);
+							shade += Math.Clamp(shading[x - 1 + shadeBuffer, y - 1 + shadeBuffer] + 0.5f, 0, 1);
+							shade += Math.Clamp(shading[x + shadeBuffer, y - 1 + shadeBuffer] + 0.5f, 0, 1);
+							shade /= 4;
+						}
+						shade = Math.Clamp(shading[x + shadeBuffer, y + shadeBuffer] + 0.5f, 0, 1);
+					}
 
 					c = Color.FromArgb((int)Math.Round(c.R * shade), (int)Math.Round(c.G * shade), (int)Math.Round(c.B * shade));
+					double h = Math.Clamp(heightData[x + shadeBuffer, y + shadeBuffer], 0, 1);
+					if (!double.IsFinite(h) || double.IsNaN(h))
+						h = 0;
+					if(useRawHeight)
+						c = Color.FromArgb((int)Math.Floor(h * 255), (int)Math.Floor(h * 255), (int)Math.Floor(h * 255));
 					result.SetPixel(x, y, c);
 				}
 			}
-
-			DrawRivers(result, skipPixels, rivers, getColor(11, 0));
+			if(drawRivers)
+				DrawRivers(result, chunkOffset, skipPixels, rivers, getColor(11, 0));
 
 			return result;
 		}
 
-		private static void DrawRivers(Bitmap result, HashSet<Point> skipPixels, IEnumerable<Vector2> rivers, Color color)
+		private static void DrawRivers(Bitmap result, Point chunkOffset, HashSet<Point> skipPixels, IEnumerable<Vector2> rivers, Color color)
 		{
 			Vector2 last1 = new Vector2(-1, -1);
 			Vector2 last2 = new Vector2(-1, -1);
@@ -108,6 +123,8 @@ namespace OLearyMapGen
 
 			foreach (KeyValuePair<Point, double> p in points)
 			{
+				if(p.Key.X < 0 || p.Key.Y < 0 || p.Key.X >= result.Width || p.Key.Y >= result.Height)
+					continue;
 				if(skipPixels.Contains(p.Key))
 					continue;
 				Color c = result.GetPixel(p.Key.X, p.Key.Y);
@@ -123,7 +140,8 @@ namespace OLearyMapGen
 			const int scalar = 3;
 			const double smoothingFactor = 0.5;
 			double nHardness =  Math.Clamp(hardness, double.Epsilon, 1);
-			Point[] line = Drawing.GetPointsOnLine(p1, p2, scalar).ToArray();
+			var ln = Drawing.GetPointsOnLine(p1, p2, scalar);
+			Point[] line = ln.ToArray();
 			line = Relax(line, smoothingFactor);
 			HashSet<Point> points = Drawing.DilateLine(line, thickness);
 			IEnumerable<Vector2> nPoints = points.Select(p => new Vector2(p.X, p.Y));
@@ -359,7 +377,7 @@ namespace OLearyMapGen
 		/// Generates the height map texture array using barycentric interpolation.
 		/// </summary>
 		/// <returns>A 1D float array representing the height map texture (row-major order).</returns>
-		private static float[,] GenerateHeightMap<T>(NodeMap<T> heightMap, int width, int height, bool blend, bool addNoise) where T : INumber<T>
+		private static float[,] GenerateHeightMap<T>(NodeMap<T> heightMap, int width, int height, bool blend, bool addNoise, int buffer=0) where T : INumber<T>
 		{
 			var vertexMap = heightMap.GetVertexMap();
 			List<VoronoiPoint> verts = vertexMap.Vertices;
@@ -379,7 +397,7 @@ namespace OLearyMapGen
 					}
 
 					// 1. Find the containing triangle
-					Triangle containingTriangle = FindContainingTriangle(vertexMap, plane, new Vector2(i, j));
+					Triangle containingTriangle = FindContainingTriangle(vertexMap, plane, new Vector2(i - buffer, j - buffer));
 
 					double heightValue;
 
@@ -387,7 +405,7 @@ namespace OLearyMapGen
 					{
 						// If the point is outside the triangulation area, assign a default value (e.g., 0)
 						// or use the height of the nearest vertex (more complex).
-						VoronoiSite near = plane.GetNearestSiteTo(i , j );
+						VoronoiSite near = plane.GetNearestSiteTo(i - buffer, j - buffer);
 						int idx = vertexMap.Vertices.FindIndex(vp => VoronoiExtentions.GetHashCode(vp) == VoronoiExtentions.GetHashCode(near));
 						heightValue = vertexHeightMap[idx];
 						heightMapData[i, j] = (float)heightValue;
@@ -405,7 +423,7 @@ namespace OLearyMapGen
 
 					// 3. Calculate barycentric coordinates
 					var (lambdaA, lambdaB, lambdaC) = CalculateBarycentric(
-						new Vector2(i, j),
+						new Vector2(i - buffer, j - buffer),
 						new Vector2((float)A.X, (float)A.Y),
 						new Vector2((float)B.X, (float)B.Y),
 						new Vector2((float)C.X, (float)C.Y));
@@ -454,7 +472,7 @@ namespace OLearyMapGen
 							heightValue = (heightValue + heightMapData[i + 1, j + 1]) / 2;
 						else if (r > 0.815)
 						{
-							if (heightValue > heightMapData[i - 1, j] && heightValue > heightMapData[i, j - 1])
+							if (i > 0 && j > 0 && heightValue > heightMapData[i - 1, j] && heightValue > heightMapData[i, j - 1])
 								heightValue *= 1.03;
 						}
 						heightMapData[i, j] = (float)heightValue;
@@ -464,7 +482,7 @@ namespace OLearyMapGen
 			return heightMapData;
 		}
 
-		private static float[,] ComputeHillshade(float[,] heightMap, double azimuth = 315, double altitude = 45, double zFactor = 100.0)
+		private static float[,] ComputeHillshade(float[,] heightMap, double azimuth = 315, double altitude = 30, double zFactor = 100.0)
 		{
 			int width = heightMap.GetLength(0);
 			int height = heightMap.GetLength(1);
