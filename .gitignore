@@ -2,6 +2,7 @@
 
 # Visual Studio cache directory
 [Bb]in/
+[Oo]bj/
 .vs/
 .vsconfig
 *.editorconfig

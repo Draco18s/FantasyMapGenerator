@@ -61,8 +61,6 @@ namespace OLearyMapGen
 			plane.Tessellate();
 			plane.Relax(2);
 
-			var nPts = plane.Sites.Select(p => new Vector2((float)p.X, (float)p.Y)).Where(v => v.X < 0 || v.Y < 0 || v.X > 255 || v.Y > 255);
-
 			Console.WriteLine($"Tessellation complete {Program.timer.Elapsed}");
 			VertexMap _vm = new VertexMap(plane, _config.chunkExtents);
 			_heightMap = new NodeMap<double>(_vm, 0.0);
