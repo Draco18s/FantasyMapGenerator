@@ -10,6 +10,7 @@ namespace OLearyMapGen
 {
 	public struct MapChunk
 	{
+		public GenParams genParams;
 		/// <summary>
 		/// Chunk coordinates
 		/// </summary>

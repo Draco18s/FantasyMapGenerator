@@ -37,6 +37,7 @@ namespace OLearyMapGen.math
 
 		public static IEnumerable<Point> GetPointsOnLine(Vector2 a, Vector2 b, int scalar)
 		{
+			// 189.09,16.69 -> -1,-1
 			a *= scalar;
 			b *= scalar;
 
@@ -50,8 +51,10 @@ namespace OLearyMapGen.math
 		{
 			int dx = x2 - x1;
 			int dy = y2 - y1;
-			int dx_x = (dx >= 0) ? 1 : -1;
-			int dy_y = (dy >= 0) ? 1 : -1;
+			int dx_x = dx > 0 ? 1 : (dx < 0 ? -1 : 0);
+			int dy_y = dy > 0 ? 1 : (dy < 0 ? -1 : 0);
+
+			// --- Initialization (Unchanged) ---
 			int local_x = x1 % square_width;
 			int local_y = y1 % square_width;
 			int x_dist = (dx >= 0) ? (square_width - local_x) : (local_x);
@@ -65,7 +68,7 @@ namespace OLearyMapGen.math
 			int end_x = x2 / square_width;
 			int end_y = y2 / square_width;
 
-			// Perform ceiling/flooring of the pixel endpoints
+			// --- Boundary Correction (Unchanged) ---
 			if (dy < 0)
 			{
 				if ((y1 % square_width) == 0)
@@ -93,23 +96,74 @@ namespace OLearyMapGen.math
 				if ((x2 % square_width) == 0)
 					end_x--;
 			}
-
-			while (x != end_x || y != end_y)
+			// ------------------------------------
+			int totalPoints = 0;
+			int px, py;
+			px = x-dx;
+			py = y-dy;
+			while (true)
 			{
 				yield return new Point(x, y);
-				int old_cross = cross_product;
-				if (old_cross >= 0)
+				totalPoints++;
+				if (totalPoints > int.MaxValue / 2 || (totalPoints > 500 && x <= 0 && y <= 0))
 				{
-					if(x != end_x)
-						x += dx_x;
+					;
+				}
+
+				if (Vector2.Distance(new Vector2(x,y), new Vector2(end_x, end_y)) >= 2+Vector2.Distance(new Vector2(px, py), new Vector2(end_x, end_y)))
+				{
+					;
+				}
+
+				if (Vector2.Distance(new Vector2(x, y), new Vector2(px, py)) + Vector2.Distance(new Vector2(x, y), new Vector2(end_x, end_y)) > 4 * Vector2.Distance(new Vector2(px, py), new Vector2(end_x, end_y)))
+				{
+					;
+				}
+
+				// 1. Check for termination immediately after yielding the current point
+				if (x == end_x && y == end_y)
+				{
+					break;
+				}
+
+				// 2. Determine movement based on error term
+				int old_cross = cross_product;
+				bool move_x = old_cross >= 0;
+				bool move_y = old_cross <= 0;
+
+				// 3. --- Boundary Saturation / Override Logic ---
+
+				// If X has reached its destination, we MUST move Y (unless Y is also done).
+				if (x == end_x && y != end_y)
+				{
+					move_x = false; // Cannot move X further
+					move_y = true;  // Force Y movement to reach the endpoint
+				}
+				// If Y has reached its destination, we MUST move X (unless X is also done).
+				else if (y == end_y && x != end_x)
+				{
+					move_x = true;  // Force X movement to reach the endpoint
+					move_y = false; // Cannot move Y further
+				}
+
+				// 4. Execute movement and update cross product
+
+				if (move_x)
+				{
+					x += dx_x;
 					cross_product += dx_cross;
 				}
-				if (old_cross <= 0)
+
+				if (move_y)
 				{
-					if(y != end_y)
-						y += dy_y;
+					y += dy_y;
 					cross_product += dy_cross;
 				}
+
+				// Safety check: If neither move happened, but we haven't broken, 
+				// something is fundamentally wrong (shouldn't happen with the override).
+				// If (!move_x && !move_y) { break; } 
+				// The termination check at the top handles this cleanly.
 			}
 		}
 

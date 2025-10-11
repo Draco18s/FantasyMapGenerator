@@ -34,6 +34,13 @@ namespace OLearyMapGen.math
 		public List<VoronoiPoint> Edge { get; }
 		public List<VertexType> _vertexTypes { get; }
 
+		public double MinX => cellMap.MinX;
+		public double MaxX => cellMap.MaxX;
+		public double MinY => cellMap.MinY;
+		public double MaxY => cellMap.MaxY;
+		public double Width => MaxX - MinX;
+		public double Height => MaxY - MinY;
+
 		public VertexMap(VoronoiPlane plane, Extents2d extents)
 		{
 			cellMap = plane ?? throw new ArgumentNullException(nameof(plane));

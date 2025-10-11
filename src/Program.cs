@@ -12,13 +12,13 @@ namespace OLearyMapGen
 	{
 		public static Stopwatch timer;
 		private static WorldMapGenerator mapGenerator;
-		private const double lakeThreshold = 0.015;
+		private const double lakeThreshold = 0.025;
 		static void Main(string[] args)
 		{
 			Console.WriteLine("Initializing");
 			timer = new Stopwatch();
 			timer.Start();
-			mapGenerator = new WorldMapGenerator(new WorldMapGenerator.GenParams
+			mapGenerator = new WorldMapGenerator(new GenParams
 			{
 				chunkExtents = new Extents2d(0, 0, 256, 256),
 				sea_level = 0.15,
@@ -36,7 +36,7 @@ namespace OLearyMapGen
 				lakeFillThreshold = lakeThreshold
 			});
 			Console.WriteLine($"Generating chunk {timer.Elapsed}");
-			MapChunk chunk = mapGenerator.GenerateChunk(0,0);
+			MapChunk chunk = mapGenerator.GenerateChunk(0, 0);
 			Console.WriteLine($"Rendering bitmap {timer.Elapsed}");
 			Bitmap r = HeightMapGenerator.HeightMapRenderer(chunk, new Extents2d(0, 0, 256, 256), GetColor, IsLake);
 			Console.WriteLine($"Rendering complete {timer.Elapsed}");
@@ -44,12 +44,34 @@ namespace OLearyMapGen
 			string dir = Directory.GetCurrentDirectory();
 			Console.WriteLine($"Saving to {dir}");
 			string file = "map_01.png";
-			r.Save(Path.Combine(dir,file), ImageFormat.Png);
+			r.Save(Path.Combine(dir, file), ImageFormat.Png);
+
+			Console.WriteLine($"Generating chunk {timer.Elapsed}");
+			chunk = mapGenerator.GenerateChunk(1, 0);
+			Console.WriteLine($"Rendering bitmap {timer.Elapsed}");
+			r = HeightMapGenerator.HeightMapRenderer(chunk, new Extents2d(0, 0, 256, 256), GetColor, IsLake);
+			Console.WriteLine($"Rendering complete {timer.Elapsed}");
+
+			dir = Directory.GetCurrentDirectory();
+			Console.WriteLine($"Saving to {dir}");
+			file = "map_02.png";
+			r.Save(Path.Combine(dir, file), ImageFormat.Png);
+
+			Console.WriteLine($"Generating chunk {timer.Elapsed}");
+			chunk = mapGenerator.GenerateChunk(2, 0);
+			Console.WriteLine($"Rendering bitmap {timer.Elapsed}");
+			r = HeightMapGenerator.HeightMapRenderer(chunk, new Extents2d(0, 0, 256, 256), GetColor, IsLake);
+			Console.WriteLine($"Rendering complete {timer.Elapsed}");
+
+			dir = Directory.GetCurrentDirectory();
+			Console.WriteLine($"Saving to {dir}");
+			file = "map_03.png";
+			r.Save(Path.Combine(dir, file), ImageFormat.Png);
 		}
 
 		private static bool IsLake(int bID, double depressionFillAmount)
 		{
-			if (bID > 12)
+			if (bID >= 12)
 			{
 				if (depressionFillAmount < lakeThreshold / 1.375)
 					bID -= 12;
@@ -67,18 +89,15 @@ namespace OLearyMapGen
 		public static Color GetColor(int bID, double depressionFillAmount)
 		{
 			Color c = GetBaseBiomeColor(bID);
-			if (bID > 12)
+			if (bID >= 12)
 			{
-				if (depressionFillAmount < lakeThreshold / 1.375)
-					bID -= 12;
-				else
+				if (depressionFillAmount > lakeThreshold / 1.375)
 					c = GetBaseBiomeColor(12);
 			}
 			else if (bID > 0)
 			{
 				if (depressionFillAmount >= lakeThreshold * 0.95)
 				{
-					bID += 12;
 					c = GetBaseBiomeColor(12);
 				}
 			}
@@ -112,9 +131,9 @@ namespace OLearyMapGen
 				case WorldMapGenerator.BiomeDef.SnowIce:
 					return Color.FromArgb(240, 240, 240);
 				case WorldMapGenerator.BiomeDef.River:
-					return Color.FromArgb(89, 125, 191);
+					return Color.FromArgb(68, 107, 178);
 				case WorldMapGenerator.BiomeDef.Lake:
-					return Color.FromArgb(73, 112, 190);
+					return Color.FromArgb(68, 107, 178);
 				default:
 					return GetBaseBiomeColor(bID - 12);
 			}

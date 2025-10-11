@@ -15,24 +15,6 @@ namespace OLearyMapGen
 {
 	public class WorldMapGenerator
 	{
-		public struct GenParams
-		{
-			public long seed;
-			public Extents2d chunkExtents;
-			public double temp_bias;
-			public double wet_bias;
-			public double sea_level;
-			public double global_modifier;
-			public double resolution;
-			public double fluxCapPercentile;
-			public double erosionRiverFactor;
-			public double erosionCreepFactor;
-			public double maxErosionRate;
-			public double ersionStrength;
-			public double riverFluxThreshold;
-			public double lakeFillThreshold;
-		}
-
 		public enum BiomeDef
 		{
 			Ocean, Grass, Desert, Savanna,
@@ -51,15 +33,19 @@ namespace OLearyMapGen
 		public WorldMapGenerator(GenParams config)
 		{
 			_config = config;
-			VoronoiPlane plane = new VoronoiPlane(-_config.resolution * 4, -_config.resolution * 4, _config.chunkExtents.Width + _config.resolution * 4, _config.chunkExtents.Height * 4 * config.resolution);
+			int extentsMult = 1;
+			int randomMulti = -1;
+			int fixedMulti = 1;
 
+			VoronoiPlane plane = new VoronoiPlane(-_config.resolution * extentsMult, -_config.resolution * extentsMult, _config.chunkExtents.Width + _config.resolution * extentsMult, _config.chunkExtents.Height + config.resolution * extentsMult);
 			UniformPoissonDiskSampler.SetSeed((uint)_config.seed);
-			IEnumerable<VoronoiSite> pts = UniformPoissonDiskSampler.SampleRectangle(new Vector2((float)_config.resolution * 3, (float)_config.resolution * 3), new Vector2((float)(_config.chunkExtents.Width - _config.resolution * 3), (float)(_config.chunkExtents.Height - _config.resolution * 3)), (float)_config.resolution, 512)
+			IEnumerable<VoronoiSite> pts = UniformPoissonDiskSampler.SampleRectangle(new Vector2(-(float)_config.resolution * randomMulti, -(float)_config.resolution * randomMulti), new Vector2((float)(_config.chunkExtents.Width + _config.resolution * randomMulti), (float)(_config.chunkExtents.Height + _config.resolution * randomMulti)), (float)_config.resolution, 512)
 				.Select(p => new VoronoiSite(p.X, p.Y))
-				.Concat(PointsAroundEdge(_config.chunkExtents, _config.resolution, _config.resolution * 3));
+				.Concat(PointsAroundEdge(_config.chunkExtents, _config.resolution, _config.resolution * fixedMulti));
+
 			plane.SetSites(pts.ToList());
 			plane.Tessellate();
-			plane.Relax(2);
+			//plane.Relax(4);
 
 			Console.WriteLine($"Tessellation complete {Program.timer.Elapsed}");
 			VertexMap _vm = new VertexMap(plane, _config.chunkExtents);
@@ -78,6 +64,8 @@ namespace OLearyMapGen
 			buffSize /= 2;
 			double x = chunkExtents.minX - buffSize;
 			double y = chunkExtents.minY - buffSize;
+			x += resolution;
+			y += resolution;
 			for (; x < chunkExtents.maxX + buffSize || x < chunkExtents.maxY + buffSize; )
 			{
 				if (x < chunkExtents.maxX + buffSize)
@@ -119,6 +107,7 @@ namespace OLearyMapGen
 
 			return new MapChunk()
 			{
+				genParams = _config,
 				position = new Point(x, y),
 				heightMap = _heightMap,
 				tempMap = _tempMap,
@@ -293,7 +282,8 @@ namespace OLearyMapGen
 				double currlevel = _heightMap.Get(i);
 				double newlevel = currlevel - amount * results.erosionMap.Get(i);
 				_heightMap.Set(i, newlevel);
-				ersionDelta.Set(i, f - h);
+				if(currlevel > _config.sea_level + _config.lakeFillThreshold)
+					ersionDelta.Set(i, f - h);
 			}
 
 			return (ersionDelta, results.riverVertices);
@@ -384,6 +374,9 @@ namespace OLearyMapGen
 		private bool IsCoastVertex(NodeMap<double> heightMap, int i)
 		{
 			VoronoiPoint v = heightMap.GetVertex(i);
+
+			//heightMap.Tessellate();
+
 			IEnumerable<VoronoiSite> incidentFaces = heightMap.GetVertexMap().Sites.Where(s => s.Points.Contains(v));
 			bool hasLand = false;
 			bool hasSea = false;
@@ -554,16 +547,24 @@ namespace OLearyMapGen
 
 		private NodeMap<double> FillDepressions(NodeMap<double> heightMap)
 		{
+			const double eps = 1e-4;
 			NodeMap<double> finalMap = new NodeMap<double>(heightMap.GetVertexMap(), heightMap.Max() + 1, heightMap.GetNeighborMap());
 			for (int i = 0; i < finalMap.Size(); i++)
 			{
-				if (heightMap.IsEdge(heightMap.GetVertex(i)))
+				double h = heightMap.Get(i);
+				VoronoiPoint p = heightMap.GetVertex(i);
+				if (p.X < 0 || p.Y < 0 || p.X > _config.chunkExtents.maxX || p.Y > _config.chunkExtents.maxY)
+				//if (heightMap.IsEdge(heightMap.GetVertex(i)) || h <= _config.sea_level)
 				{
-					finalMap.Set(i, heightMap.Get(i));
+					finalMap.Set(i, h);
+				}
+				if (h <= _config.sea_level)
+					//if (heightMap.IsEdge(heightMap.GetVertex(i)) || h <= _config.sea_level)
+				{
+					finalMap.Set(i, h);
 				}
 			}
 
-			const double eps = 1e-4;
 			bool changed = false;
 			do
 			{
@@ -698,6 +699,10 @@ namespace OLearyMapGen
 				VoronoiPoint v = _heightMap.GetVertex(i);
 				double xx = v.X + x * _config.chunkExtents.Width;
 				double yy = v.Y + y * _config.chunkExtents.Height;
+				if (v.X == 4 && v.Y == 4)
+				{
+					var d = ElevationAt(xx, yy);
+				}
 				_heightMap.Set(i, ElevationAt(xx,yy));
 			}
 			Console.WriteLine($"Heightmap ranges from {_heightMap.Min()} to {_heightMap.Max()}");

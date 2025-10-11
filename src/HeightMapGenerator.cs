@@ -6,6 +6,7 @@ using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Numerics;
+using System.Security.Cryptography;
 using System.Threading;
 using static System.Runtime.InteropServices.JavaScript.JSType;
 
@@ -22,7 +23,7 @@ namespace OLearyMapGen
 			plane.SetSites(verts.Select(p => new VoronoiSite(p.X, p.Y)).ToList());
 			plane.Tessellate();
 
-			float[,] heightData = GenerateHeightMap(chunk.heightMap, (int)Math.Round(extents.Width) + 4, (int)Math.Round(extents.Height) + 4, true, true, 2);
+			float[,] heightData = GenerateHeightMap(chunk.heightMap, (int)Math.Round(extents.Width) + 4, (int)Math.Round(extents.Height) + 4, false, false, 2);
 			float[,] erosionData = GenerateHeightMap(chunk.erosionFillMap, (int)Math.Round(extents.Width), (int)Math.Round(extents.Height), true, false);
 			float[,] biomeData = GenerateHeightMap(chunk.biomeMap, (int)Math.Round(extents.Width), (int)Math.Round(extents.Height), false, false);
 			float[,] cityData = GenerateHeightMap(chunk.cityPlacementScores, (int)Math.Round(extents.Width), (int)Math.Round(extents.Height), false, false);
@@ -33,10 +34,10 @@ namespace OLearyMapGen
 
 			IEnumerable<Vector2> rivs = chunk.riverVertices.Select(v => v < 0 ? new Vector2(-1,-1) : new Vector2((float)verts[v].X, (float)verts[v].Y));
 
-			return RenderImage(heightData, erosionData, waterData, biomeData, new Point(chunk.position.X * (int)extents.Width, chunk.position.Y * (int)extents.Height), rivs, getColor, isBodyOfWater);
+			return RenderImage(chunk.genParams, heightData, erosionData, waterData, biomeData, new Point(chunk.position.X * (int)extents.Width, chunk.position.Y * (int)extents.Height), rivs, getColor, isBodyOfWater, false, false, true);
 		}
 
-		private static Bitmap RenderImage(float[,] heightData, float[,] erosionData, float[,] waterData, float[,] biomeData, Point chunkOffset,
+		private static Bitmap RenderImage(GenParams conf, float[,] heightData, float[,] erosionData, float[,] waterData, float[,] biomeData, Point chunkOffset,
 			IEnumerable<Vector2> rivers, Func<int, double, Color> getColor, Func<int, double, bool> isBodyOfWater, bool drawRivers = true, bool doHillShading = true, bool useRawHeight=false)
 		{
 			float[,] shading = doHillShading ? ComputeHillshade(heightData) : new float[0,0];
@@ -85,12 +86,12 @@ namespace OLearyMapGen
 				}
 			}
 			if(drawRivers)
-				DrawRivers(result, chunkOffset, skipPixels, rivers, getColor(11, 0));
+				DrawRivers(conf, result, chunkOffset, skipPixels, rivers, getColor(11, 0));
 
 			return result;
 		}
 
-		private static void DrawRivers(Bitmap result, Point chunkOffset, HashSet<Point> skipPixels, IEnumerable<Vector2> rivers, Color color)
+		private static void DrawRivers(GenParams conf, Bitmap result, Point chunkOffset, HashSet<Point> skipPixels, IEnumerable<Vector2> rivers, Color color)
 		{
 			Vector2 last1 = new Vector2(-1, -1);
 			Vector2 last2 = new Vector2(-1, -1);
@@ -104,7 +105,7 @@ namespace OLearyMapGen
 			{
 				if(v.X < 0 || v.Y < 0 || last1.X < 0 || last1.Y < 0 || last2.X < 0 || last2.Y < 0)
 				{
-					if ((v.X < 0 || v.Y < 0) && last3.X >= 0 && last3.Y >= 0)
+					if ((v.X < 0 || v.Y < 0) && last1.X >= 0 && last1.Y >= 0)
 						DrawLine(result, last3, last2, last1, v, color, points, 4, hardness);
 
 					last3 = last2;
@@ -114,7 +115,8 @@ namespace OLearyMapGen
 					continue;
 				}
 
-				DrawLine(result, last3, last2, last1, v, color, points, first < 2 ? 2 : first < 6 ? 2.5 : first < 16 ? 3 : first < 64 ? 4 : 5, hardness);
+				double c = conf.resolution / 8;
+				DrawLine(result, last3, last2, last1, v, color, points, first < 2 * c ? 2 : first < 6 * c ? 2.5 : first < 16 * c ? 3 : first < 64 * c ? 4 : 5, hardness);
 				first += Vector2.Distance(last2, last1);
 				last3 = last2;
 				last2 = last1;
@@ -290,22 +292,25 @@ namespace OLearyMapGen
 
 		private static Triangle FindContainingTriangle(VertexMap vertexMap, VoronoiPlane plane, Vector2 p, VoronoiSite siteA)
 		{
+			if (p.X == 2 && p.Y == 4)
+				;
 			VoronoiSite[] neighbors = siteA.Neighbours.ToArray();
 			for (var i = 0; i < neighbors.Length; i++)
 			{
 				VoronoiSite siteB = neighbors[i];
 				// Start j at i + 1 to ensure unique pairs and avoid checking the same triangle twice
-				for (var j = i + 1; j < neighbors.Length; j++)
+				for (var j = 0; j < neighbors.Length; j++)
 				{
+					if(i == j) continue;
 					VoronoiSite siteC = neighbors[j];
-					if (!siteC.Neighbours.Contains(siteB))
+					if (!(siteC.Neighbours.Contains(siteB) || siteB.Neighbours.Contains(siteC)))
 						continue;
 					// Check if P is inside the candidate triangle (A, B, C)
 					if (!IsInside(p, new Vector2((float)siteA.X, (float)siteA.Y), new Vector2((float)siteB.X, (float)siteB.Y), new Vector2((float)siteC.X, (float)siteC.Y))) continue;
 					// Found the containing triangle!
-					int siteA_idx = vertexMap.Vertices.FindIndex(vp => VoronoiExtentions.GetHashCode(vp) == VoronoiExtentions.GetHashCode(siteA));
-					int siteB_idx = vertexMap.Vertices.FindIndex(vp => VoronoiExtentions.GetHashCode(vp) == VoronoiExtentions.GetHashCode(siteB));
-					int siteC_idx = vertexMap.Vertices.FindIndex(vp => VoronoiExtentions.GetHashCode(vp) == VoronoiExtentions.GetHashCode(siteC));
+					int siteA_idx = vertexMap.Vertices.FindIndex(vp => VoronoiExtentions.GetHashCode(vp) == VoronoiExtentions.GetHashCode(siteA) && Math.Abs(vp.X - siteA.X) < 0.01);
+					int siteB_idx = vertexMap.Vertices.FindIndex(vp => VoronoiExtentions.GetHashCode(vp) == VoronoiExtentions.GetHashCode(siteB) && Math.Abs(vp.X - siteB.X) < 0.01);
+					int siteC_idx = vertexMap.Vertices.FindIndex(vp => VoronoiExtentions.GetHashCode(vp) == VoronoiExtentions.GetHashCode(siteC) && Math.Abs(vp.X - siteC.X) < 0.01);
 
 					// We must ensure the indices are ordered consistently for the Triangle object
 					// (though the order A, B, C doesn't matter for barycentric interpolation,
@@ -315,6 +320,15 @@ namespace OLearyMapGen
 					return foundTriangle;
 				}
 			}
+
+			if (p.X == 2 && p.Y == 4)
+			{
+				VoronoiSite nearestToMid1 = plane.GetNearestSiteTo( 1,-8);
+				VoronoiSite nearestToMid2 = plane.GetNearestSiteTo( 0,-8);
+				VoronoiSite nearestToMid3 = plane.GetNearestSiteTo(-1,-8);
+				;
+			}
+
 			return null;
 		}
 
@@ -333,6 +347,8 @@ namespace OLearyMapGen
 		/// </summary>
 		private static bool IsInside(Vector2 p, Vector2 a, Vector2 b, Vector2 c)
 		{
+			if (p.X == 2 && p.Y == 4)
+				;
 			double areaABC = SignedArea(a, b, c);
 
 			// Handle degenerate triangles (shouldn't happen with good DT, but good practice)
@@ -382,7 +398,7 @@ namespace OLearyMapGen
 			var vertexMap = heightMap.GetVertexMap();
 			List<VoronoiPoint> verts = vertexMap.Vertices;
 			Dictionary<int, double> vertexHeightMap = verts.ToDictionary(v => heightMap.GetNodeIndex(v), v => Convert.ToDouble(heightMap.Get(heightMap.GetNodeIndex(v))));
-			VoronoiPlane plane = new VoronoiPlane(0, 0, width, height);
+			VoronoiPlane plane = new VoronoiPlane(vertexMap.MinX, vertexMap.MinY, vertexMap.Width, vertexMap.Height);
 			plane.SetSites(vertexMap.Vertices.Select(p => new VoronoiSite(p.X, p.Y)).ToList());
 			plane.Tessellate();
 			float[,] heightMapData = new float[width, height];
@@ -391,7 +407,7 @@ namespace OLearyMapGen
 			{
 				for (int i = 0; i < width; i++) // Column (X)
 				{
-					if (i == 6 && j == 26)
+					if (i- buffer == 2 && j- buffer == 4)
 					{
 						;
 					}
