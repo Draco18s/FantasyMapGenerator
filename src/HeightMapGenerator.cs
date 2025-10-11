@@ -15,7 +15,7 @@ namespace OLearyMapGen
 	public static class HeightMapGenerator
 	{
 
-		public static Bitmap HeightMapRenderer(MapChunk chunk, Extents2d extents, Func<int, double, Color> getColor, Func<int, double, bool> isBodyOfWater, bool doHillShading = true)
+		public static Bitmap HeightMapRenderer(MapChunk chunk, Extents2d extents, Func<BiomeDef, double, Color> getColor, Func<BiomeDef, double, bool> isBodyOfWater, bool doHillShading = true)
 		{
 			List<VoronoiPoint> verts = chunk.heightMap.GetVertexMap().Vertices;
 			
@@ -23,22 +23,23 @@ namespace OLearyMapGen
 			plane.SetSites(verts.Select(p => new VoronoiSite(p.X, p.Y)).ToList());
 			plane.Tessellate();
 
-			float[,] heightData = GenerateHeightMap(chunk.heightMap, (int)Math.Round(extents.Width) + 4, (int)Math.Round(extents.Height) + 4, false, false, 2);
+			float[,] heightData = GenerateHeightMap(chunk.heightMap, (int)Math.Round(extents.Width) + 4, (int)Math.Round(extents.Height) + 4, true, true, 2);
 			float[,] erosionData = GenerateHeightMap(chunk.erosionFillMap, (int)Math.Round(extents.Width), (int)Math.Round(extents.Height), true, false);
 			float[,] biomeData = GenerateHeightMap(chunk.biomeMap, (int)Math.Round(extents.Width), (int)Math.Round(extents.Height), false, false);
 			float[,] cityData = GenerateHeightMap(chunk.cityPlacementScores, (int)Math.Round(extents.Width), (int)Math.Round(extents.Height), false, false);
 			float[,] waterData = GenerateHeightMap(chunk.waterMap, (int)Math.Round(extents.Width), (int)Math.Round(extents.Height), true, false);
+			float[,] tempData = GenerateHeightMap(chunk.tempMap, (int)Math.Round(extents.Width), (int)Math.Round(extents.Height), true, false);
 
 			var vv = verts.Where(v => v.X > 255 || v.Y > 255).Select(v => new Vector2((float)v.X, (float)v.Y));
 			var rv = chunk.riverVertices.Select(v => v < 0 ? new Vector2(-1, -1) : new Vector2((float)verts[v].X, (float)verts[v].Y)).Where(v => v.X > 255 || v.Y > 255);
 
 			IEnumerable<Vector2> rivs = chunk.riverVertices.Select(v => v < 0 ? new Vector2(-1,-1) : new Vector2((float)verts[v].X, (float)verts[v].Y));
 
-			return RenderImage(chunk.genParams, heightData, erosionData, waterData, biomeData, new Point(chunk.position.X * (int)extents.Width, chunk.position.Y * (int)extents.Height), rivs, getColor, isBodyOfWater, false, false, true);
+			return RenderImage(chunk.genParams, heightData, erosionData, waterData, biomeData, new Point(chunk.position.X * (int)extents.Width, chunk.position.Y * (int)extents.Height), rivs, getColor, isBodyOfWater);
 		}
 
 		private static Bitmap RenderImage(GenParams conf, float[,] heightData, float[,] erosionData, float[,] waterData, float[,] biomeData, Point chunkOffset,
-			IEnumerable<Vector2> rivers, Func<int, double, Color> getColor, Func<int, double, bool> isBodyOfWater, bool drawRivers = true, bool doHillShading = true, bool useRawHeight=false)
+			IEnumerable<Vector2> rivers, Func<BiomeDef, double, Color> getColor, Func<BiomeDef, double, bool> isBodyOfWater, bool drawRivers = true, bool doHillShading = true, bool useRawHeight=false)
 		{
 			float[,] shading = doHillShading ? ComputeHillshade(heightData) : new float[0,0];
 			int shadeBuffer = (heightData.GetLength(0) - erosionData.GetLength(0)) / 2;
@@ -50,7 +51,7 @@ namespace OLearyMapGen
 			{
 				for (int y = 0; y < height; y++)
 				{
-					int biome = (int)Math.Round(biomeData[x, y]);
+					BiomeDef biome = (BiomeDef)(int)Math.Round(biomeData[x, y]);
 					float shade = 1;
 
 					//Math.Clamp(shading[x, y] + 0.5f, 0 , 1);
@@ -86,7 +87,7 @@ namespace OLearyMapGen
 				}
 			}
 			if(drawRivers)
-				DrawRivers(conf, result, chunkOffset, skipPixels, rivers, getColor(11, 0));
+				DrawRivers(conf, result, chunkOffset, skipPixels, rivers, getColor(BiomeDef.River, 0));
 
 			return result;
 		}
@@ -338,7 +339,7 @@ namespace OLearyMapGen
 		/// </summary>
 		private static double SignedArea(Vector2 p1, Vector2 p2, Vector2 p3)
 		{
-			return (p2.X - p1.X) * (p3.Y - p1.Y) - (p3.X - p1.X) * (p2.Y - p1.Y);
+			return (p1.X * (p2.Y - p3.Y) + p2.X * (p3.Y - p1.Y) + p3.X * (p1.Y - p2.Y));
 		}
 
 		/// <summary>
@@ -356,9 +357,9 @@ namespace OLearyMapGen
 
 			// Calculate barycentric coordinates (lambda_A, lambda_B, lambda_C)
 			// We only need to check if they are all non-negative.
-			double lambdaA = SignedArea(p, b, c) / areaABC;
-			double lambdaB = SignedArea(a, p, c) / areaABC;
-			double lambdaC = SignedArea(a, b, p) / areaABC;
+			double lambdaA = SignedArea(p, b, c);
+			double lambdaB = SignedArea(a, p, c);
+			double lambdaC = areaABC - lambdaA - lambdaB;
 
 			// Due to floating point precision, check slightly outside [0, 1]
 			const double epsilon = 1e-6f;

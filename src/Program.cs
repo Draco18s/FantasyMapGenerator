@@ -21,7 +21,7 @@ namespace OLearyMapGen
 			mapGenerator = new WorldMapGenerator(new GenParams
 			{
 				chunkExtents = new Extents2d(0, 0, 256, 256),
-				sea_level = 0.15,
+				sea_level = 0.3,
 				temp_bias = 0.0,
 				wet_bias = 0.0,
 				seed = 56874645123,
@@ -36,7 +36,7 @@ namespace OLearyMapGen
 				lakeFillThreshold = lakeThreshold
 			});
 			Console.WriteLine($"Generating chunk {timer.Elapsed}");
-			MapChunk chunk = mapGenerator.GenerateChunk(0, 0);
+			MapChunk chunk = mapGenerator.GenerateChunk(0, -1);
 			Console.WriteLine($"Rendering bitmap {timer.Elapsed}");
 			Bitmap r = HeightMapGenerator.HeightMapRenderer(chunk, new Extents2d(0, 0, 256, 256), GetColor, IsLake);
 			Console.WriteLine($"Rendering complete {timer.Elapsed}");
@@ -47,7 +47,7 @@ namespace OLearyMapGen
 			r.Save(Path.Combine(dir, file), ImageFormat.Png);
 
 			Console.WriteLine($"Generating chunk {timer.Elapsed}");
-			chunk = mapGenerator.GenerateChunk(1, 0);
+			chunk = mapGenerator.GenerateChunk(1, -1);
 			Console.WriteLine($"Rendering bitmap {timer.Elapsed}");
 			r = HeightMapGenerator.HeightMapRenderer(chunk, new Extents2d(0, 0, 256, 256), GetColor, IsLake);
 			Console.WriteLine($"Rendering complete {timer.Elapsed}");
@@ -58,7 +58,7 @@ namespace OLearyMapGen
 			r.Save(Path.Combine(dir, file), ImageFormat.Png);
 
 			Console.WriteLine($"Generating chunk {timer.Elapsed}");
-			chunk = mapGenerator.GenerateChunk(2, 0);
+			chunk = mapGenerator.GenerateChunk(2, -1);
 			Console.WriteLine($"Rendering bitmap {timer.Elapsed}");
 			r = HeightMapGenerator.HeightMapRenderer(chunk, new Extents2d(0, 0, 256, 256), GetColor, IsLake);
 			Console.WriteLine($"Rendering complete {timer.Elapsed}");
@@ -69,73 +69,89 @@ namespace OLearyMapGen
 			r.Save(Path.Combine(dir, file), ImageFormat.Png);
 		}
 
-		private static bool IsLake(int bID, double depressionFillAmount)
+		private static bool IsLake(BiomeDef bID, double depressionFillAmount)
 		{
-			if (bID >= 12)
+			if (bID >= BiomeDef.Lake)
 			{
 				if (depressionFillAmount < lakeThreshold / 1.375)
-					bID -= 12;
+					bID -= (int)BiomeDef.Lake;
 			}
-			else if (bID > 0)
+			else if (bID > (int)BiomeDef.Ocean)
 			{
 				if (depressionFillAmount >= lakeThreshold * 0.95)
 				{
-					bID += 12;
+					bID += (int)BiomeDef.Lake;
 				}
 			}
-			return bID >= 12 || bID == 0;
+			return bID >= BiomeDef.Lake || bID == BiomeDef.Ocean;
 		}
 
-		public static Color GetColor(int bID, double depressionFillAmount)
+		public static Color GetColor(BiomeDef bID, double depressionFillAmount)
 		{
 			Color c = GetBaseBiomeColor(bID);
-			if (bID >= 12)
+			if (bID >= BiomeDef.Lake)
 			{
 				if (depressionFillAmount > lakeThreshold / 1.375)
-					c = GetBaseBiomeColor(12);
+					c = GetBaseBiomeColor(BiomeDef.Lake);
 			}
-			else if (bID > 0)
+			else if (bID > BiomeDef.Ocean)
 			{
 				if (depressionFillAmount >= lakeThreshold * 0.95)
 				{
-					c = GetBaseBiomeColor(12);
+					c = GetBaseBiomeColor(BiomeDef.Lake);
 				}
 			}
 			return c;
 		}
 
-		private static Color GetBaseBiomeColor(int bID)
+		private static Color GetBaseBiomeColor(BiomeDef bID)
 		{
-			switch ((WorldMapGenerator.BiomeDef)bID)
+			switch (bID)
 			{
-				case WorldMapGenerator.BiomeDef.Ocean:
+				case BiomeDef.Ocean:
 					return Color.FromArgb(68, 107, 178);
-				case WorldMapGenerator.BiomeDef.Grass:
+				case BiomeDef.Plains:
 					return Color.FromArgb(148, 184, 91);
-				case WorldMapGenerator.BiomeDef.Desert:
+				case BiomeDef.Desert:
 					return Color.FromArgb(232, 212, 144);
-				case WorldMapGenerator.BiomeDef.Savanna:
+				case BiomeDef.ColdDesert:
+					return Color.FromArgb(224, 204, 140);
+				case BiomeDef.IcePlains:
+					return Color.FromArgb(200, 220, 240);
+				case BiomeDef.Beach:
+					return Color.FromArgb(245, 245, 132);
+				case BiomeDef.Badlands:
+					return Color.FromArgb(245, 204, 10);
+				case BiomeDef.Savanna:
 					return Color.FromArgb(191, 177, 100);
-				case WorldMapGenerator.BiomeDef.Rainforest:
+				case BiomeDef.Rainforest:
 					return Color.FromArgb(82, 135, 71);
-				case WorldMapGenerator.BiomeDef.Forest:
+				case BiomeDef.SeasonForest:
 					return Color.FromArgb(103, 150, 89);
-				case WorldMapGenerator.BiomeDef.Temperate:
+				case BiomeDef.TropRainforest:
 					return Color.FromArgb(70, 122, 94);
-				case WorldMapGenerator.BiomeDef.Tundra:
+				case BiomeDef.PineForest:
+					return Color.FromArgb(0, 84, 0);
+				case BiomeDef.Tundra:
 					return Color.FromArgb(189, 204, 196);
-				case WorldMapGenerator.BiomeDef.Taiga:
+				case BiomeDef.Taiga:
 					return Color.FromArgb(118, 140, 110);
-				case WorldMapGenerator.BiomeDef.Mountain:
+				case BiomeDef.Mountain:
 					return Color.FromArgb(158, 160, 163);
-				case WorldMapGenerator.BiomeDef.SnowIce:
+				case BiomeDef.Snow:
 					return Color.FromArgb(240, 240, 240);
-				case WorldMapGenerator.BiomeDef.River:
+				case BiomeDef.River:
 					return Color.FromArgb(68, 107, 178);
-				case WorldMapGenerator.BiomeDef.Lake:
+				case BiomeDef.Lake:
 					return Color.FromArgb(68, 107, 178);
+				case BiomeDef.Swamp:
+					return Color.FromArgb(75, 75, 15);
+				case BiomeDef.RockShore:
+					return Color.FromArgb(70, 85, 95);
+				case BiomeDef.Shrubland:
+					return Color.FromArgb(120, 90, 10);
 				default:
-					return GetBaseBiomeColor(bID - 12);
+					return GetBaseBiomeColor(bID - (int)BiomeDef.Lake);
 			}
 		}
 	}

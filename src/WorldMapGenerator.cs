@@ -1,6 +1,7 @@
 ﻿using OLearyMapGen.math;
 using SharpVoronoiLib;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Drawing;
@@ -15,13 +16,6 @@ namespace OLearyMapGen
 {
 	public class WorldMapGenerator
 	{
-		public enum BiomeDef
-		{
-			Ocean, Grass, Desert, Savanna,
-			Rainforest, Forest, Temperate, Tundra,
-			Taiga, Mountain, SnowIce, River, Lake
-		}
-
 		private NodeMap<double> _heightMap;
 		private NodeMap<double> _tempMap;
 		private NodeMap<double> _waterMap;
@@ -30,12 +24,17 @@ namespace OLearyMapGen
 		private FastNoiseLite _noise;
 		private GenParams _config;
 
+		private double mountain_level = 0;
+		private double snow_level = 0;
+
 		public WorldMapGenerator(GenParams config)
 		{
 			_config = config;
 			int extentsMult = 1;
 			int randomMulti = -1;
 			int fixedMulti = 1;
+			mountain_level = _config.sea_level + 0.45;
+			snow_level = mountain_level + 0.15 + (_config.temp_bias / 5);
 
 			VoronoiPlane plane = new VoronoiPlane(-_config.resolution * extentsMult, -_config.resolution * extentsMult, _config.chunkExtents.Width + _config.resolution * extentsMult, _config.chunkExtents.Height + config.resolution * extentsMult);
 			UniformPoissonDiskSampler.SetSeed((uint)_config.seed);
@@ -66,22 +65,24 @@ namespace OLearyMapGen
 			double y = chunkExtents.minY - buffSize;
 			x += resolution;
 			y += resolution;
+			double r = 1e-8;
 			for (; x < chunkExtents.maxX + buffSize || x < chunkExtents.maxY + buffSize; )
 			{
 				if (x < chunkExtents.maxX + buffSize)
 				{
-					yield return new VoronoiSite(x, chunkExtents.minY - buffSize);
-					yield return new VoronoiSite(x, chunkExtents.maxY + buffSize);
+					yield return new VoronoiSite(x + r, chunkExtents.minY - buffSize);
+					yield return new VoronoiSite(x + r, chunkExtents.maxY + buffSize);
 				}
 
 				if (y < chunkExtents.maxY + buffSize)
 				{
-					yield return new VoronoiSite(chunkExtents.minX - buffSize, y);
-					yield return new VoronoiSite(chunkExtents.maxX + buffSize, y);
+					yield return new VoronoiSite(chunkExtents.minX - buffSize, y - r);
+					yield return new VoronoiSite(chunkExtents.maxX + buffSize, y - r);
 				}
 
 				x += resolution;
 				y += resolution;
+				r += 1e-10;
 			}
 		}
 
@@ -596,16 +597,17 @@ namespace OLearyMapGen
 		private void BiomeAssignmentPass(NodeMap<double> ersionDelta)
 		{
 			BiomeDef[,] biome_table = new BiomeDef[,]
-			{                                                                                         //       +---> increasing temperature
-				{ BiomeDef.Tundra,  BiomeDef.Desert,    BiomeDef.Desert,        BiomeDef.Desert },    //       |
-				{ BiomeDef.Tundra,  BiomeDef.Grass,     BiomeDef.Grass,         BiomeDef.Savanna },   //       |
-				{ BiomeDef.Taiga,   BiomeDef.Temperate, BiomeDef.Forest,        BiomeDef.Savanna },   //       V
-				{ BiomeDef.Taiga,   BiomeDef.Temperate, BiomeDef.Rainforest,    BiomeDef.Rainforest } // increasing wetness
+			{																																																	//       +-------> increasing temperature
+				{ BiomeDef.ColdDesert,  BiomeDef.ColdDesert,    BiomeDef.ColdDesert,    BiomeDef.Desert,        BiomeDef.Desert,         BiomeDef.Desert,      BiomeDef.Desert,          BiomeDef.Badlands },   //       |
+				{ BiomeDef.ColdDesert,  BiomeDef.ColdDesert,    BiomeDef.ColdDesert,    BiomeDef.ColdDesert,    BiomeDef.Desert,         BiomeDef.Desert,      BiomeDef.Desert,          BiomeDef.Desert   },   //       |
+				{ BiomeDef.Tundra,      BiomeDef.Plains,        BiomeDef.Plains,        BiomeDef.Plains,        BiomeDef.Savanna,        BiomeDef.Savanna,     BiomeDef.Desert,          BiomeDef.Desert   },   //       |
+				{ BiomeDef.Tundra,      BiomeDef.Plains,        BiomeDef.Plains,        BiomeDef.Plains,        BiomeDef.Plains,         BiomeDef.Savanna,     BiomeDef.Savanna,         BiomeDef.Desert   },   //       |
+				{ BiomeDef.Tundra,      BiomeDef.Taiga,         BiomeDef.SeasonForest,  BiomeDef.SeasonForest,  BiomeDef.SeasonForest,   BiomeDef.Savanna,     BiomeDef.Savanna,         BiomeDef.Desert   },   //       |
+				{ BiomeDef.Taiga,       BiomeDef.Taiga,         BiomeDef.PineForest,    BiomeDef.SeasonForest,  BiomeDef.SeasonForest,   BiomeDef.Rainforest,  BiomeDef.TropRainforest,  BiomeDef.Beach    },   //       |
+				{ BiomeDef.Taiga,       BiomeDef.PineForest,    BiomeDef.PineForest,    BiomeDef.PineForest,    BiomeDef.Rainforest,     BiomeDef.Rainforest,  BiomeDef.TropRainforest,  BiomeDef.Beach    },   //       V
+				{ BiomeDef.RockShore,   BiomeDef.RockShore,     BiomeDef.Rainforest,    BiomeDef.Swamp,         BiomeDef.Swamp,          BiomeDef.Beach,       BiomeDef.Beach,           BiomeDef.Beach    }    // increasing wetness
 			};
-			double[] bins = [0.25, 0.5, 0.75];
-
-			double mountain_level = _config.sea_level + 0.45;
-			double snow_level = mountain_level + 0.15;
+			double[] bins = [0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875];
 
 			for (int i = 0; i < _biomeMap.Size(); i++)
 			{
@@ -616,11 +618,12 @@ namespace OLearyMapGen
 				double lakefill = ersionDelta.Get(i) * wet * (1-temp);
 
 				_biomeMap.Set(i, (int)biome_table[Digitize(wet, bins), Digitize(temp, bins)]);
-
-				if(alt > mountain_level)
+				if (temp < 0.1)
+					_biomeMap.Set(i, (int)BiomeDef.IcePlains);
+				if (alt > mountain_level)
 					_biomeMap.Set(i, (int)BiomeDef.Mountain);
 				if(alt > snow_level || temp < 0.15)
-					_biomeMap.Set(i, (int)BiomeDef.SnowIce);
+					_biomeMap.Set(i, (int)BiomeDef.Snow);
 				if (alt < _config.sea_level)
 					_biomeMap.Set(i, (int)BiomeDef.Ocean);
 				if (alt > _config.sea_level + _config.lakeFillThreshold && lakefill > _config.lakeFillThreshold && (2 * wet + temp / 2 > 0.7))
@@ -638,26 +641,62 @@ namespace OLearyMapGen
 			return source.Length;
 		}
 
-		private void MoisturePass(int x, int y)
-		{
-			for (int i = 0; i < _waterMap.Size(); i++)
-			{
-				VoronoiPoint v = _waterMap.GetVertex(i);
-				double xx = v.X + x * _config.chunkExtents.Width;
-				double yy = v.Y + y * _config.chunkExtents.Height;
-				_waterMap.Set(i, MoistureAt(xx, yy));
-			}
-		}
-
 		private double MoistureAt(double x, double y)
 		{
-			double moist_scale = 1024.0 * _config.global_modifier;
+			double moist_scale = 1024.0 * 4.0 * _config.global_modifier;
 			double moist_noise = FbmNoise(x, y, moist_scale, 6, 0.5, 2.2, 10);
 			double normalization_factor = 1.3;
 			double moisture_map = Math.Clamp((moist_noise / normalization_factor + 1.0) / 2.0, 0, 1);
+			moisture_map *= moisture_map * moisture_map;
 			moisture_map += _config.wet_bias;
 
-			return Math.Clamp(moisture_map, 0, 1);
+			return Math.Clamp(moisture_map * 2, 0, 1);
+		}
+
+		private void MoisturePass(int x, int y)
+		{
+			NodeMap<double> finalMap = new NodeMap<double>(_waterMap.GetVertexMap(), 0, _waterMap.GetNeighborMap());
+			for (int i = 0; i < _waterMap.Size(); i++)
+			{
+				VoronoiPoint v = _heightMap.GetVertex(i);
+				double xx = v.X + x * _config.chunkExtents.Width;
+				double yy = v.Y + y * _config.chunkExtents.Height;
+				double moist = 0;
+				double clouds1 = GetMoistureInAirToHere(xx, yy);
+				double clouds2 = GetMoistureInAirToHere(xx + _config.resolution * _config.global_modifier * 64, yy);
+				moist = 0.5 + (clouds1 - clouds2)/2;
+
+				_waterMap.Set(i, Math.Clamp(moist, 0, 1));
+			}
+		}
+
+		private double GetMoistureInAirToHere(double xx, double yy)
+		{
+			double weatherDist = (_config.chunkExtents.Width / 1.5) * _config.global_modifier;
+			double multi = 2 * _config.global_modifier;
+			double moist = MoistureAt(xx,yy);
+			for (double ox = xx - weatherDist; ox < xx; ox += _config.resolution * _config.global_modifier)
+			{
+				double elev = ElevationAt(ox, yy);
+				double temp = TemperatureAt(ox, yy);
+				if (elev < _config.sea_level)
+				{
+					moist += 0.075 * temp * multi;
+				}
+				else if (elev < _config.sea_level + 0.15)
+				{
+					moist -= 0.015 * (Math.Max(elev, _config.sea_level) + 0.15) * (1 - temp) * multi;
+					moist += 0.005 * temp * multi;
+				}
+				else
+				{
+					moist -= 0.025 * Math.Max(elev, _config.sea_level) * (1 - temp) * multi;
+				}
+				moist = Math.Clamp(moist, 0.05, temp + 0.25);
+				double after = moist;
+			}
+
+			return moist;
 		}
 
 		private void TemperaturePass(int x, int y)
@@ -671,14 +710,21 @@ namespace OLearyMapGen
 			}
 		}
 
-		private double TemperatureAt(double x, double y, VoronoiPoint v) 
+		private double TemperatureAt(double x, double y)
 		{
-			double temp_scale = 1024.0 * _config.global_modifier;
+			double temp_scale = 1024.0 * 4.0 * _config.global_modifier;
 			double temp_noise = FbmNoise(x, y, temp_scale, 5, 0.5, 2.1, 20);
 			double normalization_factor = 1.2;
 			double temp_map = Math.Clamp((temp_noise / normalization_factor + 1.0) / 2.0, 0, 1);
-			temp_map += _config.temp_bias;
+			temp_map *= temp_map * 7;
+			temp_map += _config.temp_bias - 1.3;
 
+			return Math.Clamp(temp_map, 0, 1);
+		}
+
+		private double TemperatureAt(double x, double y, VoronoiPoint v) 
+		{
+			double temp_map = TemperatureAt(x, y);
 			double height_above_sea = _heightMap.Get(_heightMap.GetNodeIndex(v)) - _config.sea_level;
 			double max_height_above_sea = 1.0 - _config.sea_level;
 			if (max_height_above_sea > 0)
@@ -686,8 +732,8 @@ namespace OLearyMapGen
 			else
 				height_above_sea = 0;
 
-			double MAX_TEMP_DROP = 0.15;
-			double altitude_modifier = Math.Pow(height_above_sea, 1.5) * MAX_TEMP_DROP;
+			double MAX_TEMP_DROP = 0.25;
+			double altitude_modifier = Math.Pow(Math.Clamp(height_above_sea, 0, 1), 2.5) * MAX_TEMP_DROP;
 
 			return Math.Clamp(temp_map - altitude_modifier, 0, 1);
 		}
@@ -746,9 +792,9 @@ namespace OLearyMapGen
 
 			double detail_contribution = detail_noise * 0.3;
 			double elevation = base_noise + detail_contribution;
-			double mountain_contribution = mountain_noise * mountain_mask;// * 0.5;
+			double mountain_contribution = mountain_noise * mountain_mask;
 			elevation += mountain_contribution;
-
+			elevation += (_config.sea_level - 0.15) / 3;
 			elevation = Math.Tan(elevation * 1.15 - 1.2) / 1.20 + 0.9;
 
 			return Math.Clamp(elevation,0,1);
