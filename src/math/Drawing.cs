@@ -37,12 +37,17 @@ namespace OLearyMapGen.math
 
 		public static IEnumerable<Point> GetPointsOnLine(Vector2 a, Vector2 b, int scalar)
 		{
-			// 189.09,16.69 -> -1,-1
 			a *= scalar;
 			b *= scalar;
 
 			a -= Vector2.Normalize(b - a) * 1.5f;
 			b += Vector2.Normalize(b - a) * 1.5f;
+
+			if ((a.X < 0 && b.X < 0) || (a.Y < 0 && b.Y < 0) || (a.X < 0 && a.Y < 0) || (b.X < 0 && b.Y < 0))
+			{
+				;
+				return Array.Empty<Point>();
+			}
 
 			return GetPointsOnLine((int)a.X, (int)a.Y, (int)b.X, (int)b.Y, scalar);
 		}

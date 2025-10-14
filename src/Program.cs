@@ -18,16 +18,17 @@ namespace OLearyMapGen
 			Console.WriteLine("Initializing");
 			timer = new Stopwatch();
 			timer.Start();
+			Extents2d extents = new Extents2d(0, 0, 256, 256);
 			mapGenerator = new WorldMapGenerator(new GenParams
 			{
-				chunkExtents = new Extents2d(0, 0, 256, 256),
+				chunkExtents = extents,
 				sea_level = 0.3,
 				temp_bias = 0.0,
 				wet_bias = 0.0,
 				seed = 56874645123,
 				resolution = 8,
 				fluxCapPercentile = 0.995,
-				global_modifier = 0.4,
+				global_modifier = 0.8,
 				erosionCreepFactor = 500,
 				maxErosionRate = 50,
 				erosionRiverFactor = 500,
@@ -36,9 +37,9 @@ namespace OLearyMapGen
 				lakeFillThreshold = lakeThreshold
 			});
 			Console.WriteLine($"Generating chunk {timer.Elapsed}");
-			MapChunk chunk = mapGenerator.GenerateChunk(0, -1);
+			MapChunk chunk = mapGenerator.GenerateChunk(0, 0);
 			Console.WriteLine($"Rendering bitmap {timer.Elapsed}");
-			Bitmap r = HeightMapGenerator.HeightMapRenderer(chunk, new Extents2d(0, 0, 256, 256), GetColor, IsLake);
+			Bitmap r = HeightMapGenerator.HeightMapRenderer(chunk, extents, GetColor, IsLake);
 			Console.WriteLine($"Rendering complete {timer.Elapsed}");
 
 			string dir = Directory.GetCurrentDirectory();
@@ -47,9 +48,9 @@ namespace OLearyMapGen
 			r.Save(Path.Combine(dir, file), ImageFormat.Png);
 
 			Console.WriteLine($"Generating chunk {timer.Elapsed}");
-			chunk = mapGenerator.GenerateChunk(1, -1);
+			chunk = mapGenerator.GenerateChunk(1, 0);
 			Console.WriteLine($"Rendering bitmap {timer.Elapsed}");
-			r = HeightMapGenerator.HeightMapRenderer(chunk, new Extents2d(0, 0, 256, 256), GetColor, IsLake);
+			r = HeightMapGenerator.HeightMapRenderer(chunk, extents, GetColor, IsLake);
 			Console.WriteLine($"Rendering complete {timer.Elapsed}");
 
 			dir = Directory.GetCurrentDirectory();
@@ -58,9 +59,9 @@ namespace OLearyMapGen
 			r.Save(Path.Combine(dir, file), ImageFormat.Png);
 
 			Console.WriteLine($"Generating chunk {timer.Elapsed}");
-			chunk = mapGenerator.GenerateChunk(2, -1);
+			chunk = mapGenerator.GenerateChunk(2, 0);
 			Console.WriteLine($"Rendering bitmap {timer.Elapsed}");
-			r = HeightMapGenerator.HeightMapRenderer(chunk, new Extents2d(0, 0, 256, 256), GetColor, IsLake);
+			r = HeightMapGenerator.HeightMapRenderer(chunk, extents, GetColor, IsLake);
 			Console.WriteLine($"Rendering complete {timer.Elapsed}");
 
 			dir = Directory.GetCurrentDirectory();

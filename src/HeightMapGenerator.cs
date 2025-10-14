@@ -1,14 +1,8 @@
 ﻿using OLearyMapGen.math;
 using SharpVoronoiLib;
-using System.Collections.Generic;
-using System.ComponentModel;
 using System.Drawing;
-using System.IO;
 using System.Linq;
 using System.Numerics;
-using System.Security.Cryptography;
-using System.Threading;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace OLearyMapGen
 {
@@ -17,25 +11,29 @@ namespace OLearyMapGen
 
 		public static Bitmap HeightMapRenderer(MapChunk chunk, Extents2d extents, Func<BiomeDef, double, Color> getColor, Func<BiomeDef, double, bool> isBodyOfWater, bool doHillShading = true)
 		{
-			List<VoronoiPoint> verts = chunk.heightMap.GetVertexMap().Vertices;
+			VertexMap vertexMap = chunk.heightMap.GetVertexMap();
+			List<VoronoiPoint> verts = vertexMap.Vertices;
 			
-			VoronoiPlane plane = new VoronoiPlane(0, 0, extents.Width, extents.Height);
-			plane.SetSites(verts.Select(p => new VoronoiSite(p.X, p.Y)).ToList());
-			plane.Tessellate();
+			Dictionary<int, double> vertexHeightMap = verts.ToDictionary(v => chunk.heightMap.GetNodeIndex(v), v => Convert.ToDouble(chunk.heightMap.Get(chunk.heightMap.GetNodeIndex(v))));
+			VoronoiPlane plane2 = new VoronoiPlane(vertexMap.MinX, vertexMap.MinY, vertexMap.Width, vertexMap.Height);
+			plane2.SetSites(vertexMap.Vertices.Select(p => new VoronoiSite(p.X, p.Y)).ToList());
+			plane2.Tessellate();
 
-			float[,] heightData = GenerateHeightMap(chunk.heightMap, (int)Math.Round(extents.Width) + 4, (int)Math.Round(extents.Height) + 4, true, true, 2);
-			float[,] erosionData = GenerateHeightMap(chunk.erosionFillMap, (int)Math.Round(extents.Width), (int)Math.Round(extents.Height), true, false);
-			float[,] biomeData = GenerateHeightMap(chunk.biomeMap, (int)Math.Round(extents.Width), (int)Math.Round(extents.Height), false, false);
-			float[,] cityData = GenerateHeightMap(chunk.cityPlacementScores, (int)Math.Round(extents.Width), (int)Math.Round(extents.Height), false, false);
-			float[,] waterData = GenerateHeightMap(chunk.waterMap, (int)Math.Round(extents.Width), (int)Math.Round(extents.Height), true, false);
-			float[,] tempData = GenerateHeightMap(chunk.tempMap, (int)Math.Round(extents.Width), (int)Math.Round(extents.Height), true, false);
+			float[,] heightData = GenerateHeightMap(chunk.heightMap, (int)Math.Round(extents.Width) + 4, (int)Math.Round(extents.Height) + 4, plane2, true, true, 2);
+			float[,] erosionData = GenerateHeightMap(chunk.erosionFillMap, (int)Math.Round(extents.Width), (int)Math.Round(extents.Height), plane2, true, false);
+			float[,] biomeData = GenerateHeightMap(chunk.biomeMap, (int)Math.Round(extents.Width), (int)Math.Round(extents.Height), plane2, false, false);
+			//float[,] cityData = GenerateHeightMap(chunk.cityPlacementScores, (int)Math.Round(extents.Width), (int)Math.Round(extents.Height), plane2, false, false);
+			float[,] waterData = GenerateHeightMap(chunk.waterMap, (int)Math.Round(extents.Width), (int)Math.Round(extents.Height), plane2, true, false);
+			//float[,] tempData = GenerateHeightMap(chunk.tempMap, (int)Math.Round(extents.Width), (int)Math.Round(extents.Height), plane2, true, false);
 
-			var vv = verts.Where(v => v.X > 255 || v.Y > 255).Select(v => new Vector2((float)v.X, (float)v.Y));
-			var rv = chunk.riverVertices.Select(v => v < 0 ? new Vector2(-1, -1) : new Vector2((float)verts[v].X, (float)verts[v].Y)).Where(v => v.X > 255 || v.Y > 255);
+			IEnumerable<Vector2> vv = verts.Where(v => v.X > 255 || v.Y > 255).Select(v => new Vector2((float)v.X, (float)v.Y));
+			IEnumerable<Vector2> rv = chunk.riverVertices.Select(v => v < 0 ? new Vector2(-1, -1) : new Vector2((float)verts[v].X, (float)verts[v].Y)).Where(v => v.X > 255 || v.Y > 255);
 
-			IEnumerable<Vector2> rivs = chunk.riverVertices.Select(v => v < 0 ? new Vector2(-1,-1) : new Vector2((float)verts[v].X, (float)verts[v].Y));
+			IEnumerable<Vector2> rivs = chunk.riverVertices.Select(v => v < 0 ? new Vector2(-(float)verts[-v].X, -(float)verts[-v].Y) : new Vector2((float)verts[v].X, (float)verts[v].Y));
 
-			return RenderImage(chunk.genParams, heightData, erosionData, waterData, biomeData, new Point(chunk.position.X * (int)extents.Width, chunk.position.Y * (int)extents.Height), rivs, getColor, isBodyOfWater);
+			Bitmap r = RenderImage(chunk.genParams, heightData, erosionData, waterData, biomeData, new Point(chunk.position.X * (int)extents.Width, chunk.position.Y * (int)extents.Height), rivs, getColor, isBodyOfWater);
+			
+			return r;
 		}
 
 		private static Bitmap RenderImage(GenParams conf, float[,] heightData, float[,] erosionData, float[,] waterData, float[,] biomeData, Point chunkOffset,
@@ -101,40 +99,48 @@ namespace OLearyMapGen
 			Dictionary<Point,double> points = new Dictionary<Point, double>();
 			const double hardness = 0.1;
 			double first = 0;
+			/*int r1 = RandomHelper.Next(255);
+			int g1 = RandomHelper.Next(255);
+			int b1 = Math.Clamp(256 - r1 - g1, 0, 255);
+			color = Color.FromArgb(r1, g1, b1);*/
 
 			foreach (Vector2 v in lRivers)
 			{
-				if(v.X < 0 || v.Y < 0 || last1.X < 0 || last1.Y < 0 || last2.X < 0 || last2.Y < 0)
+				// -4,82
+				// 4,83 -> 4,-82
+				double dist = Vector2.Distance(last1, last2);
+				if(last1.X < 0 || last1.Y < 0 || last2.X < 0 || last2.Y < 0)
 				{
-					if ((v.X < 0 || v.Y < 0) && last1.X >= 0 && last1.Y >= 0)
-						DrawLine(result, last3, last2, last1, v, color, points, 4, hardness);
+					if ((last1.X < 0 || last1.Y < 0) && last2.X >= 0 && last2.Y >= 0 && dist < conf.resolution * 4 && dist > 1)
+						DrawLine(result, last3, last2, last1, v, color, points, first < conf.resolution ? 2 : 3, hardness);
 
 					last3 = last2;
 					last2 = last1;
 					last1 = v;
-					first = 0;
+					first = (v.X <= 0 || v.Y <= 0 || v.X > conf.chunkExtents.Width || v.Y > conf.chunkExtents.Height) ? 0 : conf.resolution;
 					continue;
 				}
-
-				double c = conf.resolution / 8;
-				DrawLine(result, last3, last2, last1, v, color, points, first < 2 * c ? 2 : first < 6 * c ? 2.5 : first < 16 * c ? 3 : first < 64 * c ? 4 : 5, hardness);
+				if (dist < conf.resolution*2 && dist > 1)
+					DrawLine(result, last3, last2, last1, v, color, points, first < conf.resolution ? 2 : 3, hardness);
 				first += Vector2.Distance(last2, last1);
 				last3 = last2;
 				last2 = last1;
 				last1 = v;
-			}
 
-			foreach (KeyValuePair<Point, double> p in points)
-			{
-				if(p.Key.X < 0 || p.Key.Y < 0 || p.Key.X >= result.Width || p.Key.Y >= result.Height)
-					continue;
-				if(skipPixels.Contains(p.Key))
-					continue;
-				Color c = result.GetPixel(p.Key.X, p.Key.Y);
-				int r = (int)Math.Round(Lerp(color.R, c.R, p.Value));
-				int g = (int)Math.Round(Lerp(color.G, c.G, p.Value));
-				int b = (int)Math.Round(Lerp(color.B, c.B, p.Value));
-				result.SetPixel(p.Key.X, p.Key.Y, Color.FromArgb(r, g, b));
+				foreach (KeyValuePair<Point, double> p in points)
+				{
+					if (p.Key.X < 0 || p.Key.Y < 0 || p.Key.X >= result.Width || p.Key.Y >= result.Height)
+						continue;
+					if (skipPixels.Contains(p.Key))
+						continue;
+					Color c = result.GetPixel(p.Key.X, p.Key.Y);
+					int r = (int)Math.Round(Lerp(color.R, c.R, p.Value));
+					int g = (int)Math.Round(Lerp(color.G, c.G, p.Value));
+					int b = (int)Math.Round(Lerp(color.B, c.B, p.Value));
+					result.SetPixel(p.Key.X, p.Key.Y, Color.FromArgb(r, g, b));
+				}
+
+				points.Clear();
 			}
 		}
 
@@ -143,6 +149,8 @@ namespace OLearyMapGen
 			const int scalar = 3;
 			const double smoothingFactor = 0.5;
 			double nHardness =  Math.Clamp(hardness, double.Epsilon, 1);
+			if (Vector2.Distance(p1, p2) > 16)
+				return;
 			var ln = Drawing.GetPointsOnLine(p1, p2, scalar);
 			Point[] line = ln.ToArray();
 			line = Relax(line, smoothingFactor);
@@ -168,7 +176,7 @@ namespace OLearyMapGen
 		private static Point[] Relax(Point[] path, double factor)
 		{
 			Point[] smoothedPath = new Point[path.Length];
-			for (int i = 1; i < path.Length - 1; i++)
+			Parallel.For(1, path.Length-1, i =>
 			{
 				Point v0 = path[i - 1];
 				Point v1 = path[i];
@@ -178,7 +186,7 @@ namespace OLearyMapGen
 				v1.Y = (int)Math.Round((1 - factor) * v1.Y + factor * 0.5 * (v0.Y + v2.Y));
 
 				smoothedPath[i] = v1;
-			}
+			});
 
 			return smoothedPath;
 		}
@@ -293,16 +301,13 @@ namespace OLearyMapGen
 
 		private static Triangle FindContainingTriangle(VertexMap vertexMap, VoronoiPlane plane, Vector2 p, VoronoiSite siteA)
 		{
-			if (p.X == 2 && p.Y == 4)
-				;
 			VoronoiSite[] neighbors = siteA.Neighbours.ToArray();
 			for (var i = 0; i < neighbors.Length; i++)
 			{
 				VoronoiSite siteB = neighbors[i];
 				// Start j at i + 1 to ensure unique pairs and avoid checking the same triangle twice
-				for (var j = 0; j < neighbors.Length; j++)
+				for (var j = i+1; j < neighbors.Length; j++)
 				{
-					if(i == j) continue;
 					VoronoiSite siteC = neighbors[j];
 					if (!(siteC.Neighbours.Contains(siteB) || siteB.Neighbours.Contains(siteC)))
 						continue;
@@ -320,14 +325,6 @@ namespace OLearyMapGen
 
 					return foundTriangle;
 				}
-			}
-
-			if (p.X == 2 && p.Y == 4)
-			{
-				VoronoiSite nearestToMid1 = plane.GetNearestSiteTo( 1,-8);
-				VoronoiSite nearestToMid2 = plane.GetNearestSiteTo( 0,-8);
-				VoronoiSite nearestToMid3 = plane.GetNearestSiteTo(-1,-8);
-				;
 			}
 
 			return null;
@@ -394,21 +391,21 @@ namespace OLearyMapGen
 		/// Generates the height map texture array using barycentric interpolation.
 		/// </summary>
 		/// <returns>A 1D float array representing the height map texture (row-major order).</returns>
-		private static float[,] GenerateHeightMap<T>(NodeMap<T> heightMap, int width, int height, bool blend, bool addNoise, int buffer=0) where T : INumber<T>
+		private static float[,] GenerateHeightMap<T>(NodeMap<T> heightMap, int width, int height, VoronoiPlane plane, bool blend, bool addNoise, int buffer=0) where T : INumber<T>
 		{
 			var vertexMap = heightMap.GetVertexMap();
 			List<VoronoiPoint> verts = vertexMap.Vertices;
 			Dictionary<int, double> vertexHeightMap = verts.ToDictionary(v => heightMap.GetNodeIndex(v), v => Convert.ToDouble(heightMap.Get(heightMap.GetNodeIndex(v))));
-			VoronoiPlane plane = new VoronoiPlane(vertexMap.MinX, vertexMap.MinY, vertexMap.Width, vertexMap.Height);
-			plane.SetSites(vertexMap.Vertices.Select(p => new VoronoiSite(p.X, p.Y)).ToList());
-			plane.Tessellate();
+			//VoronoiPlane plane = new VoronoiPlane(vertexMap.MinX, vertexMap.MinY, vertexMap.Width, vertexMap.Height);
+			//plane.SetSites(vertexMap.Vertices.Select(p => new VoronoiSite(p.X, p.Y)).ToList());
+			//plane.Tessellate();
 			float[,] heightMapData = new float[width, height];
 
-			for (int j = 0; j < height; j++) // Row (Y)
+			Parallel.For(0, height, j => // Row (Y)
 			{
-				for (int i = 0; i < width; i++) // Column (X)
+				Parallel.For(0, width, i => // Column (X)
 				{
-					if (i- buffer == 2 && j- buffer == 4)
+					if (i - buffer == 2 && j - buffer == 4)
 					{
 						;
 					}
@@ -426,40 +423,41 @@ namespace OLearyMapGen
 						int idx = vertexMap.Vertices.FindIndex(vp => VoronoiExtentions.GetHashCode(vp) == VoronoiExtentions.GetHashCode(near));
 						heightValue = vertexHeightMap[idx];
 						heightMapData[i, j] = (float)heightValue;
-						continue;
 					}
-
-					// 2. Get the vertices and heights of the containing triangle
-					VoronoiPoint A = vertexMap.Vertices[containingTriangle.IndexA];
-					VoronoiPoint B = vertexMap.Vertices[containingTriangle.IndexB];
-					VoronoiPoint C = vertexMap.Vertices[containingTriangle.IndexC];
-
-					double HA = vertexHeightMap[containingTriangle.IndexA];
-					double HB = vertexHeightMap[containingTriangle.IndexB];
-					double HC = vertexHeightMap[containingTriangle.IndexC];
-
-					// 3. Calculate barycentric coordinates
-					var (lambdaA, lambdaB, lambdaC) = CalculateBarycentric(
-						new Vector2(i - buffer, j - buffer),
-						new Vector2((float)A.X, (float)A.Y),
-						new Vector2((float)B.X, (float)B.Y),
-						new Vector2((float)C.X, (float)C.Y));
-
-					// 4. Interpolate the height smoothly
-					if (blend)
-						heightValue = (lambdaA * HA) + (lambdaB * HB) + (lambdaC * HC);
 					else
-						heightValue = HA;
+					{
+						// 2. Get the vertices and heights of the containing triangle
+						VoronoiPoint A = vertexMap.Vertices[containingTriangle.IndexA];
+						VoronoiPoint B = vertexMap.Vertices[containingTriangle.IndexB];
+						VoronoiPoint C = vertexMap.Vertices[containingTriangle.IndexC];
 
-					heightMapData[i, j] = (float)heightValue;
-					/*VoronoiSite n = plane.GetNearestSiteTo(i,j);
-					heightMapData[i, j] = (float)vertexHeightMap[vertexMap.Vertices.FindIndex(v => VoronoiExtentions.GetHashCode(v) == VoronoiExtentions.GetHashCode(n))];*/
-				}
-			}
+						double HA = vertexHeightMap[containingTriangle.IndexA];
+						double HB = vertexHeightMap[containingTriangle.IndexB];
+						double HC = vertexHeightMap[containingTriangle.IndexC];
+
+						// 3. Calculate barycentric coordinates
+						var (lambdaA, lambdaB, lambdaC) = CalculateBarycentric(
+							new Vector2(i - buffer, j - buffer),
+							new Vector2((float)A.X, (float)A.Y),
+							new Vector2((float)B.X, (float)B.Y),
+							new Vector2((float)C.X, (float)C.Y));
+
+						// 4. Interpolate the height smoothly
+						if (blend)
+							heightValue = (lambdaA * HA) + (lambdaB * HB) + (lambdaC * HC);
+						else
+							heightValue = HA;
+
+						heightMapData[i, j] = (float)heightValue;
+						/*VoronoiSite n = plane.GetNearestSiteTo(i,j);
+						heightMapData[i, j] = (float)vertexHeightMap[vertexMap.Vertices.FindIndex(v => VoronoiExtentions.GetHashCode(v) == VoronoiExtentions.GetHashCode(n))];*/
+					}
+				});
+			});
 			if (addNoise)
-				for (int j = 0; j < height; j++) // Row (Y)
+				Parallel.For(0, width, j => // Row (Y)
 				{
-					for (int i = 0; i < width; i++) // Column (X)
+					Parallel.For(0, width, i => // Column (X)
 					{
 						double heightValue = heightMapData[i, j];
 						double r = RandomHelper.NextDouble();
@@ -469,11 +467,11 @@ namespace OLearyMapGen
 							heightValue = heightMapData[i, j - 1];
 						else if (r > 0.970 && i > 0 && j > 0)
 							heightValue = heightMapData[i - 1, j - 1];
-						else if (r > 0.960 && i < width-1)
+						else if (r > 0.960 && i < width - 1)
 							heightValue = heightMapData[i + 1, j];
-						else if (r > 0.950 && j < height-1)
+						else if (r > 0.950 && j < height - 1)
 							heightValue = heightMapData[i, j + 1];
-						else if (r > 0.940 && i < width-1 && j < height-1)
+						else if (r > 0.940 && i < width - 1 && j < height - 1)
 							heightValue = heightMapData[i + 1, j + 1];
 						else if (r > 0.920 && i > 0)
 							heightValue = (heightValue + heightMapData[i - 1, j]) / 2;
@@ -481,20 +479,21 @@ namespace OLearyMapGen
 							heightValue = (heightValue + heightMapData[i, j - 1]) / 2;
 						else if (r > 0.880 && i > 0 && j > 0)
 							heightValue = (heightValue + heightMapData[i - 1, j - 1]) / 2;
-						else if (r > 0.860 && i < width-1)
+						else if (r > 0.860 && i < width - 1)
 							heightValue = (heightValue + heightMapData[i + 1, j]) / 2;
-						else if (r > 0.840 && j < height-1)
+						else if (r > 0.840 && j < height - 1)
 							heightValue = (heightValue + heightMapData[i, j + 1]) / 2;
-						else if (r > 0.820 && i < width-1 && j < height-1)
+						else if (r > 0.820 && i < width - 1 && j < height - 1)
 							heightValue = (heightValue + heightMapData[i + 1, j + 1]) / 2;
 						else if (r > 0.815)
 						{
 							if (i > 0 && j > 0 && heightValue > heightMapData[i - 1, j] && heightValue > heightMapData[i, j - 1])
 								heightValue *= 1.03;
 						}
+
 						heightMapData[i, j] = (float)heightValue;
-					}
-				}
+					});
+				});
 
 			return heightMapData;
 		}
@@ -517,7 +516,7 @@ namespace OLearyMapGen
 
 			Parallel.For(0, width, xx =>
 			{
-				for (int yy = 0; yy < height; yy++)
+				Parallel.For(0, width, yy =>
 				{
 					int x = Math.Clamp(xx, 1, width - 2);
 					int y = Math.Clamp(yy, 1, height - 2);
@@ -543,7 +542,7 @@ namespace OLearyMapGen
 					);
 
 					hillshade[xx, yy] = (float)hillshadeVal;
-				}
+				});
 			});
 
 			return hillshade;
