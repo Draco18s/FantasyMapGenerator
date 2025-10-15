@@ -26,7 +26,7 @@ namespace OLearyMapGen
 			int extentsMult = (int)(_config.chunkExtents.Width / _config.resolution);
 			int extentsInset = 2;
 			int randomMulti = 1;
-			int fixedMulti = 0;
+			//int fixedMulti = 0;
 			mountain_level = _config.sea_level + 0.45;
 			snow_level = mountain_level + 0.15 + (_config.temp_bias / 5);
 
@@ -40,28 +40,28 @@ namespace OLearyMapGen
 			UniformPoissonDiskSampler.SetSeed((uint)_config.seed);
 			List<Vector2> pts = UniformPoissonDiskSampler.SampleRectangle(new Vector2(-(float)_config.resolution * randomMulti, -(float)_config.resolution * randomMulti), new Vector2((float)(_config.chunkExtents.Width + _config.resolution * randomMulti), (float)(_config.chunkExtents.Height + _config.resolution * randomMulti)), (float)_config.resolution, 512).ToList();
 			
-			IEnumerable<Vector2> newPts = pts.Concat(pts.Select(p => new Vector2(p.X - 256, p.Y)))
-				.Concat(pts.Select(p => new Vector2(p.X - 256, p.Y - 256)))
-				.Concat(pts.Select(p => new Vector2(p.X, p.Y - 256)))
-				.Concat(pts.Select(p => new Vector2(p.X + 256, p.Y)))
-				.Concat(pts.Select(p => new Vector2(p.X + 256, p.Y+256)))
-				.Concat(pts.Select(p => new Vector2(p.X, p.Y + 256)))
-				.Concat(pts.Select(p => new Vector2(p.X + 256, p.Y - 256)))
-				.Concat(pts.Select(p => new Vector2(p.X - 256, p.Y + 256)))
-				.Where(p => Math.Abs(p.X - _config.chunkExtents.Width/2) < (_config.chunkExtents.Width * 3 / 2) && Math.Abs(p.Y - _config.chunkExtents.Height / 2) < (_config.chunkExtents.Height * 3 / 2));
+			IEnumerable<Vector2> newPts = pts;
+
+			if (_config.encourageTileability)
+			{
+				newPts = newPts.Concat(pts.Select(p => new Vector2(p.X - 256, p.Y)))
+					.Concat(pts.Select(p => new Vector2(p.X - 256, p.Y - 256)))
+					.Concat(pts.Select(p => new Vector2(p.X, p.Y - 256)))
+					.Concat(pts.Select(p => new Vector2(p.X + 256, p.Y)))
+					.Concat(pts.Select(p => new Vector2(p.X + 256, p.Y + 256)))
+					.Concat(pts.Select(p => new Vector2(p.X, p.Y + 256)))
+					.Concat(pts.Select(p => new Vector2(p.X + 256, p.Y - 256)))
+					.Concat(pts.Select(p => new Vector2(p.X - 256, p.Y + 256)))
+					.Where(p => Math.Abs(p.X - _config.chunkExtents.Width / 2) < (_config.chunkExtents.Width * 3 / 2) 
+					            && Math.Abs(p.Y - _config.chunkExtents.Height / 2) < (_config.chunkExtents.Height * 3 / 2));
+			}
+
 			plane.SetSites(newPts.Select(p => new VoronoiSite(p.X, p.Y))
-				//.Concat(PointsAroundEdge(_config.chunkExtents, _config.resolution, _config.resolution * fixedMulti))
 				.ToList());
 			plane.Tessellate();
 			plane.Relax(2);
 
-			VoronoiSiteMergeQuery q = (a, b) =>
-			{
-				if(GetDistance(a, b) < _config.resolution / 4)
-					return VoronoiSiteMergeDecision.MergeIntoSite1;
-				return VoronoiSiteMergeDecision.DontMerge;
-			};
-			plane.MergeSites(q);
+			plane.MergeSites((a, b) => GetDistance(a, b) < _config.resolution / 4 ? VoronoiSiteMergeDecision.MergeIntoSite1 : VoronoiSiteMergeDecision.DontMerge);
 
 			Console.WriteLine($"Tessellation complete {Program.timer.Elapsed}");
 			VertexMap _vm = new VertexMap(plane, _config.chunkExtents);
@@ -73,34 +73,6 @@ namespace OLearyMapGen
 			_cityScoreMap = new NodeMap<double>(_vm, 0.0, neighborMap);
 			_noise = new FastNoiseLite(_config.seed);
 			_noise.SetNoiseType(FastNoiseLite.NoiseType.Perlin);
-		}
-
-		private IEnumerable<VoronoiSite> PointsAroundEdge(Extents2d chunkExtents, double resolution, double buffSize)
-		{
-			buffSize /= 2;
-			double x = chunkExtents.minX - buffSize;
-			double y = chunkExtents.minY - buffSize;
-			x += resolution;
-			y += resolution;
-			double r = 1e-8;
-			for (; x < chunkExtents.maxX + buffSize || x < chunkExtents.maxY + buffSize; )
-			{
-				if (x < chunkExtents.maxX + buffSize)
-				{
-					yield return new VoronoiSite(x + r, chunkExtents.minY - buffSize);
-					yield return new VoronoiSite(x + r, chunkExtents.maxY + buffSize);
-				}
-
-				if (y < chunkExtents.maxY + buffSize)
-				{
-					yield return new VoronoiSite(chunkExtents.minX - buffSize, y - r);
-					yield return new VoronoiSite(chunkExtents.maxX + buffSize, y - r);
-				}
-
-				x += resolution;
-				y += resolution;
-				r += 1e-10;
-			}
 		}
 
 		public MapChunk GenerateChunk(int x, int y)
@@ -136,22 +108,14 @@ namespace OLearyMapGen
 		}
 
 		/// <summary>
-		/// Returns existing computed city score map (computing it if not initialized).
-		/// </summary>
-		/// <param name="_fluxScoreBonus"></param>
-		/// <returns></returns>
-		/*private NodeMap<double> GetPotentialCityLocations(GenParams config, int chunkX, int chunkY, double _fluxScoreBonus = 2.0)
-		{
-			if (_cityScoreMap.Max() == 0)
-				_cityScoreMap = ComputeCityScores(config, chunkX, chunkY, _heightMap, _tempMap, _biomeMap, _fluxScoreBonus);
-			return _cityScoreMap;
-		}*/
-
-		/// <summary>
 		/// Compute city location score map. Results will be cached and can be fetched with <href a="GetPotentialCityLocations">GetPotentialCityLocations</href>
 		/// </summary>
+		/// <param name="config">MapGen config parameters</param>
 		/// <param name="chunkX">Where this chunk is in the world</param>
 		/// <param name="chunkY">Where this chunk is in the world</param>
+		/// <param name="heightMap">Height map</param>
+		/// <param name="tempMap">Temperature map</param>
+		/// <param name="biomeMap">Biome map</param>
 		/// <param name="fluxScoreBonus">Desirability factor to place near rivers</param>
 		/// <param name="citiesAndTowns">Dictionary of existing locations to their distance score multiplier.</param>
 		/// <param name="minCityDistance">Expected city separation distance</param>
@@ -201,14 +165,11 @@ namespace OLearyMapGen
 			Dictionary<int, int[]> neighbors = heightMap.GetNeighborMap();
 			NodeMap<double> newh = null;
 
-			for (; iterations-- > 0;)
+			while (iterations-->0)
 			{
 				newh = new NodeMap<double>(heightMap.GetVertexMap(), 0, neighbors);
 				// First pass: Decrease height values
-				int changed = 0;
-				int belowSea = 0;
-				int unchanged = 0;
-				for (int i = 0; i < heightMap.Size(); i++)
+				Parallel.For(0, heightMap.Size(), i =>
 				{
 					double orig = heightMap.Get(i);
 					newh.Set(i, orig);
@@ -216,8 +177,7 @@ namespace OLearyMapGen
 
 					if (orig <= level || nbs.Length < 3)
 					{
-						belowSea++;
-						continue;
+						return;
 					}
 
 					double[] hbh = new double[nbs.Length];
@@ -235,30 +195,24 @@ namespace OLearyMapGen
 
 					if (count > 1)
 					{
-						unchanged++;
-						continue;
+						return;
 					}
 
 					newh.Set(i, (orig - level) / 2 + level);
-					changed += 1;
-				}
+				});
 
 				heightMap = newh;
 
 				// Second pass: Increase height values
-				changed = 0;
-				belowSea = 0;
-				unchanged = 0;
 				newh = new NodeMap<double>(heightMap.GetVertexMap(), 0, neighbors);
-				for (int i = 0; i < heightMap.Size(); i++)
+				Parallel.For(0, heightMap.Size(), i =>
 				{
 					double orig = heightMap.Get(i);
 					newh.Set(i, orig);
 					int[] nbs = neighbors[i];
 					if (orig > level || nbs.Length < 3)
 					{
-						belowSea++;
-						continue;
+						return;
 					}
 
 					int count = 0;
@@ -274,12 +228,11 @@ namespace OLearyMapGen
 
 					if (count > 1)
 					{
-						unchanged++;
-						continue;
+						return;
 					}
+
 					newh.Set(i, (orig - level) / 2 + level);
-					changed += 1;
-				}
+				});
 
 				heightMap = newh;
 			}
@@ -385,6 +338,7 @@ namespace OLearyMapGen
 			List<int> paths = new List<int>();
 			List<int> pathVertices = new List<int>();
 			HashSet<int> visited = new HashSet<int>();
+			// not parallelizable
 			for (int i = 0; i < fluxMap.Size(); i++)
 			{
 				if (fluxMap.Get(i) < riverFluxThreshold || IsCoastVertex(heightMap, i, sea_level))
@@ -436,8 +390,6 @@ namespace OLearyMapGen
 		{
 			VoronoiPoint v = heightMap.GetVertex(i);
 
-			//heightMap.Tessellate();
-
 			IEnumerable<VoronoiSite> incidentFaces = heightMap.GetVertexMap().Sites.Where(s => s.Points.Contains(v));
 			bool hasLand = false;
 			bool hasSea = false;
@@ -456,7 +408,7 @@ namespace OLearyMapGen
 					return true;
 			}
 
-			return hasLand && hasSea;
+			return false;
 		}
 
 		private static bool IsLandFace(NodeMap<double> heightMap, VoronoiSite face, double sea_level)
@@ -467,15 +419,16 @@ namespace OLearyMapGen
 
 		private static void SmoothCoastline()
 		{
+			// TODO
 		}
 
 		private static NodeMap<double> CalculateSlopeMap(NodeMap<double> heightMap)
 		{
 			NodeMap<double> slopeMap = new NodeMap<double>(heightMap.GetVertexMap(), 0.0, heightMap.GetNeighborMap());
-			for (int i = 0; i < slopeMap.Size(); i++)
+			Parallel.For(0, slopeMap.Size(), i =>
 			{
 				slopeMap.Set(i, CalculateSlope(heightMap, i));
-			}
+			});
 
 			return slopeMap;
 		}
@@ -521,7 +474,7 @@ namespace OLearyMapGen
 		{
 			NodeMap<double> fluxMap = new NodeMap<double>(heightMap.GetVertexMap(), -1, heightMap.GetNeighborMap());
 
-			for (int i = 0; i < flowMap.Size(); i++)
+			Parallel.For(0, flowMap.Size(), i =>
 			{
 				int next = i;
 				while (next != -1)
@@ -529,7 +482,7 @@ namespace OLearyMapGen
 					fluxMap.Set(next, fluxMap.Get(next) + 1);
 					next = flowMap.Get(next);
 				}
-			}
+			});
 
 			double maxFlux = CalculateFluxCap(fluxMap, fluxCapPercentile);
 			Parallel.For(0, fluxMap.Size(), i =>
@@ -550,6 +503,7 @@ namespace OLearyMapGen
 			int[] bins = new int[nbins];
 			double step = max / nbins;
 			double invstep = 1.0 / step;
+			// not parallelizable
 			for (int i = 0; i < size; i++)
 			{
 				double f = fluxMap.Get(i);
@@ -563,6 +517,7 @@ namespace OLearyMapGen
 			double acc = 0.0;
 			double maxflux = 0.0;
 
+			// not parallelizable
 			for (int i = 0; i < nbins; i++)
 			{
 				double pct = bins[i] / (double)size;
@@ -593,9 +548,11 @@ namespace OLearyMapGen
 				var neighbors = heightMap.GetNeighbors(i);
 				foreach (int n in neighbors)
 				{
-					if (!(heightMap.Get(n) < minHeight)) continue;
-					minHeight = heightMap.Get(n);
-					minVert = n;
+					if (heightMap.Get(n) < minHeight)
+					{
+						minHeight = heightMap.Get(n);
+						minVert = n;
+					}
 				}
 
 				if (minVert >= 0)
@@ -613,16 +570,6 @@ namespace OLearyMapGen
 		}
 
 		private static double GetDistance(VoronoiPoint v1, Point v2)
-		{
-			return Vector2.Distance(new Vector2((float)v1.X, (float)v1.Y), new Vector2((float)v2.X, (float)v2.Y));
-		}
-
-		private static double GetDistance(Point v1, VoronoiPoint v2)
-		{
-			return Vector2.Distance(new Vector2((float)v1.X, (float)v1.Y), new Vector2((float)v2.X, (float)v2.Y));
-		}
-
-		private static double GetDistance(Point v1, Point v2)
 		{
 			return Vector2.Distance(new Vector2((float)v1.X, (float)v1.Y), new Vector2((float)v2.X, (float)v2.Y));
 		}
@@ -655,7 +602,7 @@ namespace OLearyMapGen
 			do
 			{
 				changed = false;
-				Parallel.For(0, heightMap.Size(), i =>
+				Parallel.For(0, finalMap.Size(), i =>
 				{
 					if (Math.Abs(heightMap.Get(i) - finalMap.Get(i)) < eps) return;
 
@@ -663,13 +610,12 @@ namespace OLearyMapGen
 					foreach (int n in neighbors)
 					{
 						double nval = finalMap.Get(n) + eps;
-						double fh = finalMap.Get(i);
 						if (heightMap.Get(i) > nval)
 						{
 							finalMap.Set(i, heightMap.Get(i));
 							changed = true;
 						}
-						else if (fh > nval && fh > heightMap.Get(i))
+						else if (finalMap.Get(i) > nval && finalMap.Get(i) > heightMap.Get(i))
 						{
 							finalMap.Set(i, nval);
 							changed = true;
@@ -742,7 +688,8 @@ namespace OLearyMapGen
 		private void MoisturePass(int x, int y)
 		{
 			NodeMap<double> finalMap = new NodeMap<double>(_waterMap.GetVertexMap(), 0, _waterMap.GetNeighborMap());
-			Parallel.For(0, _waterMap.Size(), i =>
+			// not parallelizable
+			for (int i = 0; i < _waterMap.Size(); i++)
 			{
 				VoronoiPoint v = _heightMap.GetVertex(i);
 				double xx = v.X + x * _config.chunkExtents.Width;
@@ -753,7 +700,7 @@ namespace OLearyMapGen
 				moist = 0.5 + (clouds1 - clouds2) / 2;
 
 				_waterMap.Set(i, Math.Clamp(moist, 0, 1));
-			});
+			}
 		}
 
 		private double GetMoistureInAirToHere(double xx, double yy)
@@ -761,6 +708,7 @@ namespace OLearyMapGen
 			double weatherDist = (_config.chunkExtents.Width / 4);
 			double multi = 2 * _config.global_modifier;
 			double moist = MoistureAt(xx,yy);
+			// not parallelizable
 			for (double ox = xx - weatherDist; ox < xx; ox += _config.resolution * _config.global_modifier)
 			{
 				double elev = ElevationAt(ox, yy);
@@ -778,8 +726,8 @@ namespace OLearyMapGen
 				{
 					moist -= 0.025 * Math.Max(elev, _config.sea_level) * (1 - temp) * multi;
 				}
+
 				moist = Math.Clamp(moist, 0.05, temp + 0.25);
-				double after = moist;
 			}
 
 			return moist;
@@ -814,7 +762,7 @@ namespace OLearyMapGen
 			double height_above_sea = _heightMap.Get(_heightMap.GetNodeIndex(v)) - _config.sea_level;
 			double max_height_above_sea = 1.0 - _config.sea_level;
 			if (max_height_above_sea > 0)
-				height_above_sea = height_above_sea / max_height_above_sea;
+				height_above_sea /= max_height_above_sea;
 			else
 				height_above_sea = 0;
 
@@ -826,6 +774,7 @@ namespace OLearyMapGen
 
 		private void ElevationPass(double x, double y)
 		{
+			// not parallelizable
 			for (int i = 0; i < _heightMap.Size(); i++)
 			{
 				VoronoiPoint v = _heightMap.GetVertex(i);
@@ -833,7 +782,6 @@ namespace OLearyMapGen
 				double yy = v.Y + y * _config.chunkExtents.Height;
 				_heightMap.Set(i, ElevationAt(xx,yy));
 			}
-			Console.WriteLine($"Heightmap ranges from {_heightMap.Min()} to {_heightMap.Max()}");
 		}
 
 		private double ElevationAt(double x, double y)

@@ -10,6 +10,7 @@ namespace OLearyMapGen
 	public struct GenParams
 	{
 		public long seed;
+		public bool encourageTileability;
 		public Extents2d chunkExtents;
 		public double temp_bias;
 		public double wet_bias;

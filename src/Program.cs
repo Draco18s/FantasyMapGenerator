@@ -21,6 +21,7 @@ namespace OLearyMapGen
 			Extents2d extents = new Extents2d(0, 0, 256, 256);
 			mapGenerator = new WorldMapGenerator(new GenParams
 			{
+				encourageTileability = true,
 				chunkExtents = extents,
 				sea_level = 0.3,
 				temp_bias = 0.0,
@@ -28,7 +29,7 @@ namespace OLearyMapGen
 				seed = 56874645123,
 				resolution = 8,
 				fluxCapPercentile = 0.995,
-				global_modifier = 0.8,
+				global_modifier = 0.4,
 				erosionCreepFactor = 500,
 				maxErosionRate = 50,
 				erosionRiverFactor = 500,
@@ -47,7 +48,7 @@ namespace OLearyMapGen
 			string file = "map_01.png";
 			r.Save(Path.Combine(dir, file), ImageFormat.Png);
 
-			Console.WriteLine($"Generating chunk {timer.Elapsed}");
+			/*Console.WriteLine($"Generating chunk {timer.Elapsed}");
 			chunk = mapGenerator.GenerateChunk(1, 0);
 			Console.WriteLine($"Rendering bitmap {timer.Elapsed}");
 			r = HeightMapGenerator.HeightMapRenderer(chunk, extents, GetColor, IsLake);
@@ -67,7 +68,7 @@ namespace OLearyMapGen
 			dir = Directory.GetCurrentDirectory();
 			Console.WriteLine($"Saving to {dir}");
 			file = "map_03.png";
-			r.Save(Path.Combine(dir, file), ImageFormat.Png);
+			r.Save(Path.Combine(dir, file), ImageFormat.Png);*/
 		}
 
 		private static bool IsLake(BiomeDef bID, double depressionFillAmount)

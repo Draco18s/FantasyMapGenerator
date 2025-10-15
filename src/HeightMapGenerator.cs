@@ -1,8 +1,15 @@
 ﻿using OLearyMapGen.math;
 using SharpVoronoiLib;
+using System.Collections.Generic;
+using System.ComponentModel;
 using System.Drawing;
+using System.IO;
 using System.Linq;
 using System.Numerics;
+using System.Reflection;
+using System.Security.Cryptography;
+using System.Threading;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace OLearyMapGen
 {
@@ -151,7 +158,7 @@ namespace OLearyMapGen
 			double nHardness =  Math.Clamp(hardness, double.Epsilon, 1);
 			if (Vector2.Distance(p1, p2) > 16)
 				return;
-			var ln = Drawing.GetPointsOnLine(p1, p2, scalar);
+			IEnumerable<Point> ln = Drawing.GetPointsOnLine(p1, p2, scalar);
 			Point[] line = ln.ToArray();
 			line = Relax(line, smoothingFactor);
 			HashSet<Point> points = Drawing.DilateLine(line, thickness);
@@ -306,8 +313,9 @@ namespace OLearyMapGen
 			{
 				VoronoiSite siteB = neighbors[i];
 				// Start j at i + 1 to ensure unique pairs and avoid checking the same triangle twice
-				for (var j = i+1; j < neighbors.Length; j++)
+				for (var j = 0; j < neighbors.Length; j++)
 				{
+					if(i == j) continue;
 					VoronoiSite siteC = neighbors[j];
 					if (!(siteC.Neighbours.Contains(siteB) || siteB.Neighbours.Contains(siteC)))
 						continue;
@@ -345,8 +353,6 @@ namespace OLearyMapGen
 		/// </summary>
 		private static bool IsInside(Vector2 p, Vector2 a, Vector2 b, Vector2 c)
 		{
-			if (p.X == 2 && p.Y == 4)
-				;
 			double areaABC = SignedArea(a, b, c);
 
 			// Handle degenerate triangles (shouldn't happen with good DT, but good practice)
@@ -393,7 +399,7 @@ namespace OLearyMapGen
 		/// <returns>A 1D float array representing the height map texture (row-major order).</returns>
 		private static float[,] GenerateHeightMap<T>(NodeMap<T> heightMap, int width, int height, VoronoiPlane plane, bool blend, bool addNoise, int buffer=0) where T : INumber<T>
 		{
-			var vertexMap = heightMap.GetVertexMap();
+			VertexMap vertexMap = heightMap.GetVertexMap();
 			List<VoronoiPoint> verts = vertexMap.Vertices;
 			Dictionary<int, double> vertexHeightMap = verts.ToDictionary(v => heightMap.GetNodeIndex(v), v => Convert.ToDouble(heightMap.Get(heightMap.GetNodeIndex(v))));
 			//VoronoiPlane plane = new VoronoiPlane(vertexMap.MinX, vertexMap.MinY, vertexMap.Width, vertexMap.Height);
@@ -405,11 +411,6 @@ namespace OLearyMapGen
 			{
 				Parallel.For(0, width, i => // Column (X)
 				{
-					if (i - buffer == 2 && j - buffer == 4)
-					{
-						;
-					}
-
 					// 1. Find the containing triangle
 					Triangle containingTriangle = FindContainingTriangle(vertexMap, plane, new Vector2(i - buffer, j - buffer));
 
@@ -449,8 +450,6 @@ namespace OLearyMapGen
 							heightValue = HA;
 
 						heightMapData[i, j] = (float)heightValue;
-						/*VoronoiSite n = plane.GetNearestSiteTo(i,j);
-						heightMapData[i, j] = (float)vertexHeightMap[vertexMap.Vertices.FindIndex(v => VoronoiExtentions.GetHashCode(v) == VoronoiExtentions.GetHashCode(n))];*/
 					}
 				});
 			});
