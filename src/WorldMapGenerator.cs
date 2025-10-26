@@ -77,11 +77,11 @@ namespace OLearyMapGen
 
 		public MapChunk GenerateChunk(int x, int y)
 		{
-			ElevationPass(x, y);
+			ElevationPass(x, y, _config.elevationRamping);
 			Console.WriteLine($"Elevation Pass Complete {Program.timer.Elapsed}");
 			TemperaturePass(x, y);
 			Console.WriteLine($"Temperature Pass Complete {Program.timer.Elapsed}");
-			MoisturePass(x, y);
+			MoisturePass(x, y, _config.elevationRamping);
 			Console.WriteLine($"Moisture Pass Complete {Program.timer.Elapsed}");
 			(NodeMap<double> ersionDelta, List<int> riverVertices) = ErosionPass(_config.ersionStrength, _config.fluxCapPercentile, _config.riverFluxThreshold, 
 				_config.erosionRiverFactor, _config.erosionCreepFactor, _config.maxErosionRate, _config.resolution/2.0, _config.lakeFillThreshold, _config.sea_level);
@@ -685,7 +685,7 @@ namespace OLearyMapGen
 			return Math.Clamp(moisture_map * 2, 0, 1);
 		}
 
-		private void MoisturePass(int x, int y)
+		private void MoisturePass(int x, int y, ContinentalElevationRampFactors elevationRamping)
 		{
 			NodeMap<double> finalMap = new NodeMap<double>(_waterMap.GetVertexMap(), 0, _waterMap.GetNeighborMap());
 			// not parallelizable
@@ -695,15 +695,15 @@ namespace OLearyMapGen
 				double xx = v.X + x * _config.chunkExtents.Width;
 				double yy = v.Y + y * _config.chunkExtents.Height;
 				double moist = 0;
-				double clouds1 = GetMoistureInAirToHere(xx, yy);
-				double clouds2 = GetMoistureInAirToHere(xx + _config.resolution * _config.global_modifier * 64, yy);
+				double clouds1 = GetMoistureInAirToHere(xx, yy, elevationRamping);
+				double clouds2 = GetMoistureInAirToHere(xx + _config.resolution * _config.global_modifier * 64, yy, elevationRamping);
 				moist = 0.5 + (clouds1 - clouds2) / 2;
 
 				_waterMap.Set(i, Math.Clamp(moist, 0, 1));
 			}
 		}
 
-		private double GetMoistureInAirToHere(double xx, double yy)
+		private double GetMoistureInAirToHere(double xx, double yy, ContinentalElevationRampFactors elevationRamping)
 		{
 			double weatherDist = (_config.chunkExtents.Width / 4);
 			double multi = 2 * _config.global_modifier;
@@ -711,7 +711,7 @@ namespace OLearyMapGen
 			// not parallelizable
 			for (double ox = xx - weatherDist; ox < xx; ox += _config.resolution * _config.global_modifier)
 			{
-				double elev = ElevationAt(ox, yy);
+				double elev = ElevationAt(ox, yy, elevationRamping);
 				double temp = TemperatureAt(ox, yy);
 				if (elev < _config.sea_level)
 				{
@@ -772,7 +772,7 @@ namespace OLearyMapGen
 			return Math.Clamp(temp_map - altitude_modifier, 0, 1);
 		}
 
-		private void ElevationPass(double x, double y)
+		private void ElevationPass(double x, double y, ContinentalElevationRampFactors elevationRamping)
 		{
 			// not parallelizable
 			for (int i = 0; i < _heightMap.Size(); i++)
@@ -780,11 +780,11 @@ namespace OLearyMapGen
 				VoronoiPoint v = _heightMap.GetVertex(i);
 				double xx = v.X + x * _config.chunkExtents.Width;
 				double yy = v.Y + y * _config.chunkExtents.Height;
-				_heightMap.Set(i, ElevationAt(xx,yy));
+				_heightMap.Set(i, ElevationAt(xx,yy, elevationRamping));
 			}
 		}
 
-		private double ElevationAt(double x, double y)
+		private double ElevationAt(double x, double y, ContinentalElevationRampFactors elevationRamping)
 		{
 			double warp_scale_large = 2048.0 * _config.global_modifier;
 			double warp_strength_large = warp_scale_large * 0.1;
@@ -826,6 +826,13 @@ namespace OLearyMapGen
 			elevation += mountain_contribution;
 			elevation += (_config.sea_level - 0.15) / 3;
 			elevation = Math.Tan(elevation * 1.15 - 1.2) / 1.20 + 0.9;
+			double d = Math.Sqrt(x * x + y * y);
+			if (elevationRamping.minRadius > 0 && d >= elevationRamping.minRadius)
+			{
+				double t = (d-elevationRamping.minRadius)*Math.Abs(elevationRamping.rampFactor) / elevationRamping.minRadius;
+				t = Math.Clamp(t, 0, 1);
+				elevation = double.Lerp(Math.Sign(elevationRamping.rampFactor) > 0 ? 1 : 0, Math.Sign(elevationRamping.rampFactor) > 0 ? 0 : 1, t);
+			}
 
 			return Math.Clamp(elevation,0,1);
 		}
