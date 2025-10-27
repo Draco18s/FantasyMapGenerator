@@ -35,10 +35,15 @@ namespace OLearyMapGen
 				erosionRiverFactor = 500,
 				ersionStrength = 0.1,
 				riverFluxThreshold = 0.06,
-				lakeFillThreshold = lakeThreshold
+				lakeFillThreshold = lakeThreshold,
+				elevationRamping = new ContinentalElevationRampFactors()
+				{
+					minRadius = 192,
+					rampFactor = -0.3
+				}
 			});
 			Console.WriteLine($"Generating chunk {timer.Elapsed}");
-			MapChunk chunk = mapGenerator.GenerateChunk(0, 0);
+			MapChunk chunk = mapGenerator.GenerateChunk(0, -1);
 			Console.WriteLine($"Rendering bitmap {timer.Elapsed}");
 			Bitmap r = HeightMapGenerator.HeightMapRenderer(chunk, extents, GetColor, IsLake);
 			Console.WriteLine($"Rendering complete {timer.Elapsed}");
@@ -48,8 +53,8 @@ namespace OLearyMapGen
 			string file = "map_01.png";
 			r.Save(Path.Combine(dir, file), ImageFormat.Png);
 
-			/*Console.WriteLine($"Generating chunk {timer.Elapsed}");
-			chunk = mapGenerator.GenerateChunk(1, 0);
+			Console.WriteLine($"Generating chunk {timer.Elapsed}");
+			chunk = mapGenerator.GenerateChunk(1, -1);
 			Console.WriteLine($"Rendering bitmap {timer.Elapsed}");
 			r = HeightMapGenerator.HeightMapRenderer(chunk, extents, GetColor, IsLake);
 			Console.WriteLine($"Rendering complete {timer.Elapsed}");
@@ -60,7 +65,7 @@ namespace OLearyMapGen
 			r.Save(Path.Combine(dir, file), ImageFormat.Png);
 
 			Console.WriteLine($"Generating chunk {timer.Elapsed}");
-			chunk = mapGenerator.GenerateChunk(2, 0);
+			chunk = mapGenerator.GenerateChunk(2, -1);
 			Console.WriteLine($"Rendering bitmap {timer.Elapsed}");
 			r = HeightMapGenerator.HeightMapRenderer(chunk, extents, GetColor, IsLake);
 			Console.WriteLine($"Rendering complete {timer.Elapsed}");
@@ -68,7 +73,7 @@ namespace OLearyMapGen
 			dir = Directory.GetCurrentDirectory();
 			Console.WriteLine($"Saving to {dir}");
 			file = "map_03.png";
-			r.Save(Path.Combine(dir, file), ImageFormat.Png);*/
+			r.Save(Path.Combine(dir, file), ImageFormat.Png);
 		}
 
 		private static bool IsLake(BiomeDef bID, double depressionFillAmount)

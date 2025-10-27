@@ -827,11 +827,11 @@ namespace OLearyMapGen
 			elevation += (_config.sea_level - 0.15) / 3;
 			elevation = Math.Tan(elevation * 1.15 - 1.2) / 1.20 + 0.9;
 			double d = Math.Sqrt(x * x + y * y);
-			if (elevationRamping.minRadius > 0 && d >= elevationRamping.minRadius)
+			if (elevationRamping.minRadius > 0)
 			{
 				double t = (d-elevationRamping.minRadius)*Math.Abs(elevationRamping.rampFactor) / elevationRamping.minRadius;
 				t = Math.Clamp(t, 0, 1);
-				elevation = double.Lerp(Math.Sign(elevationRamping.rampFactor) > 0 ? 1 : 0, Math.Sign(elevationRamping.rampFactor) > 0 ? 0 : 1, t);
+				elevation = double.Lerp(Math.Sign(elevationRamping.rampFactor) > 0 ? elevation : 0, Math.Sign(elevationRamping.rampFactor) > 0 ? 0 : elevation, t);
 			}
 
 			return Math.Clamp(elevation,0,1);
